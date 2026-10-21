@@ -159,7 +159,13 @@ export function ResearchList({ folders, researches, factCounts }: Props) {
                     ref={virtualizer.measureElement}
                     className="group absolute left-0 top-0 grid w-full cursor-pointer grid-cols-[minmax(200px,1fr)_40px] md:grid-cols-[minmax(200px,1fr)_160px_40px] lg:grid-cols-[minmax(240px,1fr)_180px_170px_150px_40px] items-center border-b px-6 text-sm hover:bg-zinc-50"
                     style={{ transform: `translateY(${v.start}px)`, height: 48 }}
-                    onClick={() => router.push(`/research/${r.id}`)}
+                    onClick={(e) => {
+                      const t = e.target as HTMLElement;
+                      // Ignore clicks from the row menu, and clicks that bubble from portaled menus/dialogs.
+                      if (t.closest("[data-row-menu]") || !e.currentTarget.contains(t)) return;
+                      if (document.querySelector("[role=menu],[role=dialog],[role=alertdialog]")) return;
+                      router.push(`/research/${r.id}`);
+                    }}
                   >
                     <div className="flex min-w-0 items-center gap-2">
                       <StatusDot status={r.status} />
@@ -171,7 +177,7 @@ export function ResearchList({ folders, researches, factCounts }: Props) {
                       <Badge variant="secondary">{r.status}</Badge>
                     </div>
                     <div className="hidden text-muted-foreground lg:block">{formatDateTime(r.updated_at)}</div>
-                    <div onClick={(e) => e.stopPropagation()}>
+                    <div data-row-menu className="flex h-full items-center" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
                       <ResearchRowMenu research={r} folders={folders} />
                     </div>
                   </div>

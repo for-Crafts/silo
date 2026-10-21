@@ -40,10 +40,10 @@ async function main() {
     (await ask("Supabase の service_role キーを貼り付けて Enter（画面には表示されません）: ", true));
   if (!serviceKey) throw new Error("service_role キーが空です");
 
-  const email = (await ask("admin にするメールアドレス: ")).toLowerCase();
+  const email = (process.env.SEED_EMAIL || (await ask("admin にするメールアドレス: "))).toLowerCase();
   if (!email.includes("@")) throw new Error("メールアドレスが不正です");
 
-  const workspaceName = (await ask("ワークスペース名 [for Crafts]: ")) || "for Crafts";
+  const workspaceName = process.env.SEED_WORKSPACE || (await ask("ワークスペース名 [for Crafts]: ")) || "for Crafts";
 
   const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
 

@@ -236,12 +236,38 @@ async function main() {
     return parent!;
   }
 
-  const { data: existing } = await sb.from("research_file").select("ext_id").not("ext_id", "is", null);
+  const { data: existing, error: exErr } = await sb
+    .from("research_file")
+    .select("id, ext_id, transcript_enc, updated_at")
+    .not("ext_id", "is", null);
+  if (exErr) throw exErr;
   const existingIds = new Set((existing ?? []).map((r) => r.ext_id as string));
+  const existingByExt = new Map((existing ?? []).map((r) => [r.ext_id as string, r]));
+  let backfilled = 0;
+  let redated = 0;
 
   let added = 0, skipped = 0, factCount = 0, uttCount = 0, transcriptCount = 0;
   for (const p of parsed) {
-    if (existingIds.has(p.extId)) { skipped += 1; continue; }
+    if (existingIds.has(p.extId)) {
+      skipped += 1;
+      // Backfill transcript for files imported earlier without one.
+      const row = existingByExt.get(p.extId);
+      if (row && !row.transcript_enc && p.transcript) {
+        const { error: tErr } = await sb.rpc("admin_set_transcript", { p_research_id: row.id, p_text: p.transcript });
+        if (tErr) console.error(`  transcript backfill failed for ${p.title}: ${tErr.message}`);
+        else backfilled += 1;
+      }
+      // Restore original Centou timestamp if it was overwritten.
+      if (row && p.updatedAt && new Date(row.updated_at as string).getTime() !== new Date(p.updatedAt).getTime()) {
+        const { error: dErr } = await sb
+          .from("research_file")
+          .update({ updated_at: p.updatedAt, created_at: p.updatedAt })
+          .eq("id", row.id);
+        if (dErr) console.error(`  date restore failed for ${p.title}: ${dErr.message}`);
+        else redated += 1;
+      }
+      continue;
+    }
     const fid = await folderId(p.folderName);
     const ins = {
       workspace_id: ws,
@@ -313,7 +339,7 @@ async function main() {
     existingIds.add(p.extId);
   }
 
-  console.log(`追加 ${added} 件／スキップ ${skipped} 件`);
+  console.log(`追加 ${added} 件／スキップ ${skipped} 件（うち議事録を補完 ${backfilled} 件、更新日時を復元 ${redated} 件）`);
   console.log(`  議事録 ${transcriptCount}、発話 ${uttCount}、ファクト ${factCount}、インサイト新規 ${created.insights}、フォルダ ${folders.size}`);
 }
 

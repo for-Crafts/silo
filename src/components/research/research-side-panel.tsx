@@ -162,6 +162,7 @@ function TranscriptSheet({ researchId, initialHasTranscript }: { researchId: str
     const { data, error } = await createClient().rpc("get_transcript", { p_research_id: researchId });
     setLoading(false);
     if (error) {
+      console.error("get_transcript failed:", error.code, error.message);
       toast.error("議事録を取得できませんでした");
       setText("");
       return;
@@ -173,7 +174,10 @@ function TranscriptSheet({ researchId, initialHasTranscript }: { researchId: str
     setSaving(true);
     const { error } = await createClient().rpc("set_transcript", { p_research_id: researchId, p_text: text ?? "" });
     setSaving(false);
-    if (error) return toast.error(SAVE_ERROR);
+    if (error) {
+      console.error("set_transcript failed:", error.code, error.message);
+      return toast.error(SAVE_ERROR);
+    }
     setHasTranscript(!!text);
     toast.success("議事録を暗号化して保存しました");
   }

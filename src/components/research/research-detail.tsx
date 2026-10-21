@@ -33,7 +33,7 @@ export function useDebouncedSave<T>(ms: number, save: (value: T) => Promise<bool
   return useCallback(
     (value: T) => {
       if (timer.current) clearTimeout(timer.current);
-      beginSave();
+      else beginSave(); // count one pending save per debounce window
       timer.current = setTimeout(async () => {
         timer.current = null;
         const ok = await saveRef.current(value);

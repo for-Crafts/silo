@@ -95,12 +95,12 @@ export function ResearchList({ folders, researches, factCounts }: Props) {
             新しくつくる
           </Button>
         </div>
-        <div className="flex items-center gap-2 px-6 py-4">
+        <div className="flex flex-wrap items-center gap-2 px-6 py-4">
           <Input
             placeholder="タイトル・対象者で検索"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            className="max-w-xs"
+            className="w-56"
           />
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger className="w-48">
@@ -128,14 +128,14 @@ export function ResearchList({ folders, researches, factCounts }: Props) {
               ))}
             </SelectContent>
           </Select>
-          <span className="ml-auto text-sm text-muted-foreground">{rows.length} 件</span>
+          <span className="ml-auto shrink-0 text-sm text-muted-foreground">{rows.length} 件</span>
         </div>
 
-        <div className="grid grid-cols-[minmax(0,1fr)_200px_180px_160px_40px] border-y bg-zinc-50 px-6 py-2 text-xs font-medium text-muted-foreground">
+        <div className="grid grid-cols-[minmax(200px,1fr)_40px] md:grid-cols-[minmax(200px,1fr)_160px_40px] lg:grid-cols-[minmax(240px,1fr)_180px_170px_150px_40px] border-y bg-zinc-50 px-6 py-2 text-xs font-medium text-muted-foreground">
           <div>タイトル</div>
-          <div>対象者</div>
-          <div>ステータス</div>
-          <div>更新日時</div>
+          <div className="hidden lg:block">対象者</div>
+          <div className="hidden md:block">ステータス</div>
+          <div className="hidden lg:block">更新日時</div>
           <div />
         </div>
 
@@ -157,7 +157,7 @@ export function ResearchList({ folders, researches, factCounts }: Props) {
                     key={r.id}
                     data-index={v.index}
                     ref={virtualizer.measureElement}
-                    className="group absolute left-0 top-0 grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_200px_180px_160px_40px] items-center border-b px-6 text-sm hover:bg-zinc-50"
+                    className="group absolute left-0 top-0 grid w-full cursor-pointer grid-cols-[minmax(200px,1fr)_40px] md:grid-cols-[minmax(200px,1fr)_160px_40px] lg:grid-cols-[minmax(240px,1fr)_180px_170px_150px_40px] items-center border-b px-6 text-sm hover:bg-zinc-50"
                     style={{ transform: `translateY(${v.start}px)`, height: 48 }}
                     onClick={() => router.push(`/research/${r.id}`)}
                   >
@@ -166,11 +166,11 @@ export function ResearchList({ folders, researches, factCounts }: Props) {
                       <span className="truncate font-medium">{r.title || "無題"}</span>
                       <span className="shrink-0 text-xs text-muted-foreground">{factCounts[r.id] ?? 0} ファクト</span>
                     </div>
-                    <div className="truncate text-muted-foreground">{r.subject}</div>
-                    <div>
+                    <div className="hidden truncate text-muted-foreground lg:block">{r.subject}</div>
+                    <div className="hidden md:block">
                       <Badge variant="secondary">{r.status}</Badge>
                     </div>
-                    <div className="text-muted-foreground">{formatDateTime(r.updated_at)}</div>
+                    <div className="hidden text-muted-foreground lg:block">{formatDateTime(r.updated_at)}</div>
                     <div onClick={(e) => e.stopPropagation()}>
                       <ResearchRowMenu research={r} folders={folders} />
                     </div>

@@ -119,7 +119,7 @@ export function ResearchSidebar({ folders, researches }: { folders: Folder[]; re
           <span>すべてのリサーチ</span>
           <span className="text-xs text-muted-foreground">{researches.length}</span>
         </Link>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        <DndContext id="folder-sort" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={ordered.map((f) => f.id)} strategy={verticalListSortingStrategy}>
             {ordered.map((f) => {
               const active = folderParam === f.id;

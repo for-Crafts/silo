@@ -15,3 +15,9 @@ Next.js 15 (App Router) / TypeScript / Tailwind v4 / shadcn/ui / Tiptap / dnd-ki
 ## 秘密情報
 `SUPABASE_SERVICE_ROLE_KEY` はコード・リポジトリ・`.env.local` に書かない。seed 実行時にだけ入力する。
 議事録（`research_file.transcript_enc`）は pgcrypto で暗号化され、鍵は Supabase Vault にある。
+
+## Centou からの移行
+```
+SEED_EMAIL=<admin メール> SUPABASE_SERVICE_ROLE_KEY=<key> pnpm import:centou <data.json> [--dry-run]
+```
+`centou_file_id` → `research_file.ext_id` で重複スキップ。背景／概要は Tiptap JSON、本文は暗号化議事録、`### all > A > B` はインサイトツリー、箇条書きはファクト（発話行付き）になる。

@@ -215,7 +215,7 @@ async function main() {
   const { data: insightRows } = await sb.from("insight").select("id, parent_id, title, is_inbox").eq("workspace_id", ws).is("deleted_at", null);
   const nodeKey = (parent: string | null, title: string) => `${parent ?? "root"}::${title}`;
   const nodes = new Map((insightRows ?? []).filter((i) => !i.is_inbox).map((i) => [nodeKey(i.parent_id, i.title), i.id as string]));
-  let created = { insights: 0 };
+  const created = { insights: 0 };
   async function insightIdForPath(path: string[]): Promise<string> {
     if (path.length === 0) return inboxId;
     let parent: string | null = null;

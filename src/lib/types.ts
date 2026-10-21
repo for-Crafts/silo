@@ -1,0 +1,86 @@
+export type Role = "admin" | "editor" | "viewer";
+
+export type Member = {
+  workspace_id: string;
+  user_id: string;
+  email: string;
+  role: Role;
+};
+
+export type Folder = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export const RESEARCH_STATUSES = ["1. 内容の記載", "2. ファクトとの紐付け", "3. 完了"] as const;
+export type ResearchStatus = (typeof RESEARCH_STATUSES)[number];
+
+/** Columns the client is allowed to read (transcript_enc is excluded by grant). */
+export const RESEARCH_COLUMNS =
+  "id, workspace_id, folder_id, title, subject, background, overview, tags, status, ext_id, created_by, updated_by, created_at, updated_at, deleted_at";
+
+export type ResearchFile = {
+  id: string;
+  workspace_id: string;
+  folder_id: string | null;
+  title: string;
+  subject: string;
+  background: unknown | null;
+  overview: unknown | null;
+  tags: string[];
+  status: string;
+  ext_id: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+};
+
+export type ResearchListItem = Omit<ResearchFile, "background" | "overview">;
+
+export type Utterance = {
+  id: string;
+  workspace_id: string;
+  research_id: string;
+  sort_order: number;
+  speaker: string;
+  insight_text: string;
+  note: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Insight = {
+  id: string;
+  workspace_id: string;
+  parent_id: string | null;
+  title: string;
+  tags: string[];
+  importance: "高" | "中" | "低" | null;
+  sort_order: number;
+  is_inbox: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+};
+
+export type Fact = {
+  id: string;
+  workspace_id: string;
+  research_id: string;
+  utterance_id: string | null;
+  insight_id: string | null;
+  text: string;
+  speaker: string;
+  note: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+};

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileTextIcon, LightbulbIcon, QuoteIcon } from "lucide-react";
 import {
+  Command,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
@@ -77,9 +78,11 @@ export function CommandSearch({ open, onOpenChange }: { open: boolean; onOpenCha
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} title="検索" description="リサーチ・インサイト・ファクトを検索">
+      <Command>
       <CommandInput placeholder="リサーチ・インサイト・ファクトを検索…" />
       <CommandList>
         <CommandEmpty>見つかりません</CommandEmpty>
+        {research.length > 0 && (
         <CommandGroup heading="リサーチ">
           {research.map((x) => (
             <CommandItem key={x.id} value={`${x.label} ${x.sub ?? ""} ${x.id}`} onSelect={() => go(x.href)}>
@@ -89,6 +92,8 @@ export function CommandSearch({ open, onOpenChange }: { open: boolean; onOpenCha
             </CommandItem>
           ))}
         </CommandGroup>
+        )}
+        {insights.length > 0 && (
         <CommandGroup heading="インサイト">
           {insights.map((x) => (
             <CommandItem key={x.id} value={`${x.label} ${x.id}`} onSelect={() => go(x.href)}>
@@ -97,6 +102,8 @@ export function CommandSearch({ open, onOpenChange }: { open: boolean; onOpenCha
             </CommandItem>
           ))}
         </CommandGroup>
+        )}
+        {facts.length > 0 && (
         <CommandGroup heading="ファクト">
           {facts.map((x) => (
             <CommandItem key={x.id} value={`${x.label} ${x.id}`} onSelect={() => go(x.href)}>
@@ -105,7 +112,9 @@ export function CommandSearch({ open, onOpenChange }: { open: boolean; onOpenCha
             </CommandItem>
           ))}
         </CommandGroup>
+        )}
       </CommandList>
+      </Command>
     </CommandDialog>
   );
 }

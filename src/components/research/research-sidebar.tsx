@@ -1,6 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -37,6 +47,28 @@ export function ResearchSidebar({ folders, researches }: { folders: Folder[]; re
   const [newName, setNewName] = useState("");
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState<Folder | null>(null);
+  const [ordered, setOrdered] = useState<Folder[]>(folders);
+  useEffect(() => setOrdered(folders), [folders]);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  async function onDragEnd(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const from = ordered.findIndex((f) => f.id === active.id);
+    const to = ordered.findIndex((f) => f.id === over.id);
+    const next = arrayMove(ordered, from, to);
+    setOrdered(next);
+    const supabase = createClient();
+    const results = await Promise.all(
+      next.map((f, i) => (f.sort_order === i ? null : supabase.from("folder").update({ sort_order: i }).eq("id", f.id)))
+    );
+    if (results.some((r) => r?.error)) {
+      toast.error(SAVE_ERROR);
+      setOrdered(folders);
+      return;
+    }
+    router.refresh();
+  }
 
   const countBy = (id: string | null) => researches.filter((r) => r.folder_id === id).length;
   const uncategorized = countBy(null);
@@ -87,53 +119,59 @@ export function ResearchSidebar({ folders, researches }: { folders: Folder[]; re
           <span>すべてのリサーチ</span>
           <span className="text-xs text-muted-foreground">{researches.length}</span>
         </Link>
-        {folders.map((f) => {
-          const active = folderParam === f.id;
-          if (editing?.id === f.id) {
-            return (
-              <Input
-                key={f.id}
-                autoFocus
-                className="h-8"
-                value={editing.name}
-                onChange={(e) => setEditing({ id: f.id, name: e.target.value })}
-                onBlur={renameFolder}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") renameFolder();
-                  if (e.key === "Escape") setEditing(null);
-                }}
-              />
-            );
-          }
-          return (
-            <Link key={f.id} href={`/research?folder=${f.id}`} className={itemClass(active)}>
-              <span className="truncate">{f.name}</span>
-              <span className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground group-hover:hidden">{countBy(f.id)}</span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      className="hidden group-hover:inline-flex data-[state=open]:inline-flex"
-                      onClick={(e) => e.preventDefault()}
-                    >
-                      <MoreHorizontalIcon />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuItem onSelect={() => setEditing({ id: f.id, name: f.name })}>
-                      名称を変更
-                    </DropdownMenuItem>
-                    <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(f)}>
-                      フォルダを削除
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </span>
-            </Link>
-          );
-        })}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <SortableContext items={ordered.map((f) => f.id)} strategy={verticalListSortingStrategy}>
+            {ordered.map((f) => {
+              const active = folderParam === f.id;
+              if (editing?.id === f.id) {
+                return (
+                  <Input
+                    key={f.id}
+                    autoFocus
+                    className="h-8"
+                    value={editing.name}
+                    onChange={(e) => setEditing({ id: f.id, name: e.target.value })}
+                    onBlur={renameFolder}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") renameFolder();
+                      if (e.key === "Escape") setEditing(null);
+                    }}
+                  />
+                );
+              }
+              return (
+                <SortableFolderRow key={f.id} id={f.id}>
+                  <Link href={`/research?folder=${f.id}`} className={itemClass(active)}>
+                    <span className="truncate">{f.name}</span>
+                    <span className="flex items-center gap-1">
+                      <span className="text-xs text-muted-foreground group-hover:hidden">{countBy(f.id)}</span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="hidden group-hover:inline-flex data-[state=open]:inline-flex"
+                            onClick={(e) => e.preventDefault()}
+                          >
+                            <MoreHorizontalIcon />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                          <DropdownMenuItem onSelect={() => setEditing({ id: f.id, name: f.name })}>
+                            名称を変更
+                          </DropdownMenuItem>
+                          <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(f)}>
+                            フォルダを削除
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </span>
+                  </Link>
+                </SortableFolderRow>
+              );
+            })}
+          </SortableContext>
+        </DndContext>
         {uncategorized > 0 && (
           <Link href="/research?folder=none" className={itemClass(folderParam === "none")}>
             <span className="text-muted-foreground">未分類</span>
@@ -164,5 +202,20 @@ export function ResearchSidebar({ folders, researches }: { folders: Folder[]; re
         </AlertDialogContent>
       </AlertDialog>
     </aside>
+  );
+}
+
+function SortableFolderRow({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(isDragging && "z-10 rounded-md bg-background shadow-md")}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
+    </div>
   );
 }

@@ -6,9 +6,8 @@ import type { Member } from "@/lib/types";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: claims } = await supabase.auth.getClaims();
+  const user = claims?.claims ? { id: claims.claims.sub, email: claims.claims.email as string | undefined } : null;
   if (!user) redirect("/login");
 
   const { data: me } = await supabase

@@ -84,3 +84,25 @@ export type Fact = {
   updated_at: string;
   deleted_at: string | null;
 };
+
+export type FactWithInsight = Fact & { insight: { id: string; title: string; is_inbox: boolean } | null };
+
+/** インサイト画面のファクト行（元リサーチのタイトル付き） */
+export type FactRow = Pick<Fact, "id" | "text" | "speaker" | "note" | "insight_id" | "research_id" | "updated_at"> & {
+  research: { title: string } | null;
+};
+
+export type ActionTemplate = "blank" | "flow" | "persona" | "mindmap" | "doc";
+
+export type ActionItem = {
+  id: string;
+  workspace_id: string;
+  type: "board" | "doc";
+  template: ActionTemplate | null;
+  title: string;
+  content: unknown;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+};

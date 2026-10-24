@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { toast } from "sonner";
@@ -23,8 +23,30 @@ type Props = {
   factCounts: Record<string, number>;
 };
 
-export function ResearchList({ folders, researches, factCounts }: Props) {
+export function ResearchList({ folders: initialFolders, researches: initialResearches, factCounts }: Props) {
   const router = useRouter();
+  // 一覧の状態はこのコンポーネントが持つ。操作は即座にここへ反映し、サーバ再取得（router.refresh）はしない
+  const [folders, setFoldersState] = useState(initialFolders);
+  const [researches, setResearchesState] = useState(initialResearches);
+  useEffect(() => setFoldersState(initialFolders), [initialFolders]);
+  useEffect(() => setResearchesState(initialResearches), [initialResearches]);
+  const setFolders = useCallback((u: (fs: Folder[]) => Folder[]) => setFoldersState(u), []);
+  const setResearches = useCallback((u: (rs: ResearchListItem[]) => ResearchListItem[]) => setResearchesState(u), []);
+  const folderOps = useMemo(
+    () => ({
+      setFolders,
+      unfileResearches: (folderId: string) =>
+        setResearches((rs) => rs.map((r) => (r.folder_id === folderId ? { ...r, folder_id: null } : r))),
+    }),
+    [setFolders, setResearches]
+  );
+  const researchOps = useMemo(() => ({ setResearches }), [setResearches]);
+  const prefetched = useRef(new Set<string>());
+  const prefetch = (id: string) => {
+    if (prefetched.current.has(id)) return;
+    prefetched.current.add(id);
+    router.prefetch(`/research/${id}`);
+  };
   const params = useSearchParams();
   const folderParam = params.get("folder"); // null = all, "none" = 未分類
   const { workspaceId, userId } = useWorkspace();
@@ -69,6 +91,7 @@ export function ResearchList({ folders, researches, factCounts }: Props) {
     const { data, error } = await supabase
       .from("research_file")
       .insert({
+        id: crypto.randomUUID(),
         workspace_id: workspaceId,
         folder_id: currentFolder?.id ?? null,
         created_by: userId,
@@ -86,10 +109,13 @@ export function ResearchList({ folders, researches, factCounts }: Props) {
 
   return (
     <div className="flex h-full">
-      <ResearchSidebar folders={folders} researches={researches} />
+      <ResearchSidebar folders={folders} researches={researches} ops={folderOps} />
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center justify-between px-6 pt-6">
-          <h1 className="text-xl font-semibold">{heading}</h1>
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-[22px] font-semibold tracking-[-0.01em]">{heading}</h1>
+            <span className="text-[13px] text-zinc-500">全 {rows.length} 件 · 更新順</span>
+          </div>
           <Button className="bg-zinc-950" onClick={createResearch} disabled={creating}>
             <PlusIcon data-icon="inline-start" />
             新しくつくる
@@ -128,7 +154,6 @@ export function ResearchList({ folders, researches, factCounts }: Props) {
               ))}
             </SelectContent>
           </Select>
-          <span className="ml-auto shrink-0 text-sm text-muted-foreground">{rows.length} 件</span>
         </div>
 
         <div className="grid grid-cols-[minmax(200px,1fr)_40px] md:grid-cols-[minmax(200px,1fr)_160px_40px] lg:grid-cols-[minmax(240px,1fr)_180px_170px_150px_40px] border-y bg-zinc-50 px-6 py-2 text-xs font-medium text-muted-foreground">
@@ -159,6 +184,7 @@ export function ResearchList({ folders, researches, factCounts }: Props) {
                     ref={virtualizer.measureElement}
                     className="group absolute left-0 top-0 grid w-full cursor-pointer grid-cols-[minmax(200px,1fr)_40px] md:grid-cols-[minmax(200px,1fr)_160px_40px] lg:grid-cols-[minmax(240px,1fr)_180px_170px_150px_40px] items-center border-b px-6 text-sm hover:bg-zinc-50"
                     style={{ transform: `translateY(${v.start}px)`, height: 48 }}
+                    onMouseEnter={() => prefetch(r.id)}
                     onClick={(e) => {
                       const t = e.target as HTMLElement;
                       // Ignore clicks from the row menu, and clicks that bubble from portaled menus/dialogs.
@@ -178,7 +204,7 @@ export function ResearchList({ folders, researches, factCounts }: Props) {
                     </div>
                     <div className="hidden text-muted-foreground lg:block">{formatDateTime(r.updated_at)}</div>
                     <div data-row-menu className="flex h-full items-center" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
-                      <ResearchRowMenu research={r} folders={folders} />
+                      <ResearchRowMenu research={r} folders={folders} ops={researchOps} />
                     </div>
                   </div>
                 );

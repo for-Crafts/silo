@@ -6,6 +6,8 @@ import {
   Heading1Icon,
   Heading2Icon,
   Heading3Icon,
+  ImageIcon,
+  Grid3x3Icon,
   ListIcon,
   ListOrderedIcon,
   MinusIcon,
@@ -21,6 +23,8 @@ type CommandItem = SuggestionItem & {
 };
 
 export const UTTERANCE_TABLE_EVENT = "silo:focus-utterance-table";
+/** エディタに画像を挿入するためのファイル選択を開く（detail.editor に対象エディタ） */
+export const PICK_IMAGE_EVENT = "silo:pick-image";
 
 const ITEMS: CommandItem[] = [
   {
@@ -78,6 +82,24 @@ const ITEMS: CommandItem[] = [
     keywords: ["hr", "divider", "rule", "kugiri"],
     icon: <MinusIcon className="size-4" />,
     run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run(),
+  },
+  {
+    id: "image",
+    title: "画像",
+    description: "画像をアップロード（貼り付け・ドロップでも可）",
+    keywords: ["image", "img", "picture", "gazo", "photo"],
+    icon: <ImageIcon className="size-4" />,
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).run();
+      window.dispatchEvent(new CustomEvent(PICK_IMAGE_EVENT, { detail: { editor: e } }));
+    },
+  },
+  {
+    id: "table",
+    title: "表",
+    keywords: ["table", "hyo", "grid"],
+    icon: <Grid3x3Icon className="size-4" />,
+    run: (e, r) => e.chain().focus().deleteRange(r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
   },
   {
     id: "utterance",

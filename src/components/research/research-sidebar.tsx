@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -39,7 +39,21 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-export function ResearchSidebar({ folders, researches }: { folders: Folder[]; researches: ResearchListItem[] }) {
+export type FolderOps = {
+  setFolders: (updater: (fs: Folder[]) => Folder[]) => void;
+  /** フォルダ削除時、中のリサーチを未分類に移す（ローカル） */
+  unfileResearches: (folderId: string) => void;
+};
+
+export function ResearchSidebar({
+  folders,
+  researches,
+  ops,
+}: {
+  folders: Folder[];
+  researches: ResearchListItem[];
+  ops: FolderOps;
+}) {
   const router = useRouter();
   const params = useSearchParams();
   const folderParam = params.get("folder");
@@ -47,27 +61,24 @@ export function ResearchSidebar({ folders, researches }: { folders: Folder[]; re
   const [newName, setNewName] = useState("");
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState<Folder | null>(null);
-  const [ordered, setOrdered] = useState<Folder[]>(folders);
-  useEffect(() => setOrdered(folders), [folders]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
+  // 以下の操作はすべて「画面を先に更新 → 裏で保存 → 失敗したら元に戻す」
   async function onDragEnd(e: DragEndEvent) {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
-    const from = ordered.findIndex((f) => f.id === active.id);
-    const to = ordered.findIndex((f) => f.id === over.id);
-    const next = arrayMove(ordered, from, to);
-    setOrdered(next);
+    const prev = folders;
+    const from = folders.findIndex((f) => f.id === active.id);
+    const to = folders.findIndex((f) => f.id === over.id);
+    const next = arrayMove(folders, from, to).map((f, i) => ({ ...f, sort_order: i }));
+    ops.setFolders(() => next);
     const supabase = createClient();
-    const results = await Promise.all(
-      next.map((f, i) => (f.sort_order === i ? null : supabase.from("folder").update({ sort_order: i }).eq("id", f.id)))
-    );
-    if (results.some((r) => r?.error)) {
+    const changed = next.filter((f, i) => prev.find((p) => p.id === f.id)?.sort_order !== i);
+    const results = await Promise.all(changed.map((f) => supabase.from("folder").update({ sort_order: f.sort_order }).eq("id", f.id)));
+    if (results.some((r) => r.error)) {
       toast.error(SAVE_ERROR);
-      setOrdered(folders);
-      return;
+      ops.setFolders(() => prev);
     }
-    router.refresh();
   }
 
   const countBy = (id: string | null) => researches.filter((r) => r.folder_id === id).length;
@@ -76,13 +87,24 @@ export function ResearchSidebar({ folders, researches }: { folders: Folder[]; re
   async function addFolder() {
     const name = newName.trim();
     if (!name) return;
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("folder")
-      .insert({ workspace_id: workspaceId, name, sort_order: folders.length });
-    if (error) return toast.error(SAVE_ERROR);
+    const now = new Date().toISOString();
+    const folder: Folder = {
+      id: crypto.randomUUID(),
+      workspace_id: workspaceId,
+      name,
+      sort_order: folders.length,
+      created_at: now,
+      updated_at: now,
+    };
+    ops.setFolders((fs) => [...fs, folder]);
     setNewName("");
-    router.refresh();
+    const { error } = await createClient()
+      .from("folder")
+      .insert({ id: folder.id, workspace_id: workspaceId, name, sort_order: folder.sort_order });
+    if (error) {
+      toast.error(SAVE_ERROR);
+      ops.setFolders((fs) => fs.filter((f) => f.id !== folder.id));
+    }
   }
 
   async function renameFolder() {
@@ -90,20 +112,28 @@ export function ResearchSidebar({ folders, researches }: { folders: Folder[]; re
     const name = editing.name.trim();
     const id = editing.id;
     setEditing(null);
-    if (!name) return;
+    const before = folders.find((f) => f.id === id);
+    if (!name || !before || before.name === name) return;
+    ops.setFolders((fs) => fs.map((f) => (f.id === id ? { ...f, name } : f)));
     const { error } = await createClient().from("folder").update({ name }).eq("id", id);
-    if (error) return toast.error(SAVE_ERROR);
-    router.refresh();
+    if (error) {
+      toast.error(SAVE_ERROR);
+      ops.setFolders((fs) => fs.map((f) => (f.id === id ? { ...f, name: before.name } : f)));
+    }
   }
 
   async function deleteFolder() {
     if (!deleting) return;
-    const id = deleting.id;
+    const target = deleting;
     setDeleting(null);
-    const { error } = await createClient().from("folder").delete().eq("id", id);
-    if (error) return toast.error(SAVE_ERROR);
-    if (folderParam === id) router.push("/research");
-    router.refresh();
+    ops.setFolders((fs) => fs.filter((f) => f.id !== target.id));
+    ops.unfileResearches(target.id);
+    if (folderParam === target.id) router.push("/research");
+    const { error } = await createClient().from("folder").delete().eq("id", target.id);
+    if (error) {
+      toast.error(SAVE_ERROR);
+      ops.setFolders((fs) => [...fs, target].sort((a, b) => a.sort_order - b.sort_order));
+    }
   }
 
   const itemClass = (active: boolean) =>
@@ -120,8 +150,8 @@ export function ResearchSidebar({ folders, researches }: { folders: Folder[]; re
           <span className="text-xs text-muted-foreground">{researches.length}</span>
         </Link>
         <DndContext id="folder-sort" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={ordered.map((f) => f.id)} strategy={verticalListSortingStrategy}>
-            {ordered.map((f) => {
+          <SortableContext items={folders.map((f) => f.id)} strategy={verticalListSortingStrategy}>
+            {folders.map((f) => {
               const active = folderParam === f.id;
               if (editing?.id === f.id) {
                 return (
@@ -133,7 +163,7 @@ export function ResearchSidebar({ folders, researches }: { folders: Folder[]; re
                     onChange={(e) => setEditing({ id: f.id, name: e.target.value })}
                     onBlur={renameFolder}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") renameFolder();
+                      if (e.key === "Enter" && !e.nativeEvent.isComposing) renameFolder();
                       if (e.key === "Escape") setEditing(null);
                     }}
                   />
@@ -185,7 +215,7 @@ export function ResearchSidebar({ folders, researches }: { folders: Folder[]; re
         value={newName}
         onChange={(e) => setNewName(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") addFolder();
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) addFolder();
         }}
       />
 

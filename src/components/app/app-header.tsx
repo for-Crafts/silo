@@ -33,9 +33,14 @@ export function AppHeader() {
   const search = useCommandSearch();
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b bg-background px-4">
-      <div className="flex items-center gap-6">
-        <Link href="/research" className="text-base font-semibold tracking-tight">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b bg-background px-6">
+      <div className="flex items-center gap-7">
+        <Link href="/research" className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.01em]">
+          <span className="inline-flex size-[22px] items-center justify-center rounded-md bg-zinc-950">
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
+              <path d="M4 7h16M4 12h10M4 17h7" />
+            </svg>
+          </span>
           silo
         </Link>
         <nav className="flex items-center gap-1">
@@ -46,8 +51,8 @@ export function AppHeader() {
                 key={t.href}
                 href={t.href}
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                  active ? "bg-zinc-100 text-foreground" : "text-muted-foreground hover:text-foreground"
+                  "rounded-md px-3 py-1.5 text-sm transition-colors",
+                  active ? "bg-zinc-100 font-medium text-foreground" : "text-zinc-600 hover:bg-zinc-100"
                 )}
               >
                 {t.label}

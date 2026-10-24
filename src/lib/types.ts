@@ -84,3 +84,5 @@ export type Fact = {
   updated_at: string;
   deleted_at: string | null;
 };
+
+export type FactWithInsight = Fact & { insight: { id: string; title: string; is_inbox: boolean } | null };

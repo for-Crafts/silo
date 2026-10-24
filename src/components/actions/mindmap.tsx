@@ -2,9 +2,20 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { LightbulbIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  ChevronLeftIcon,
+  GripVerticalIcon,
+  LightbulbIcon,
+  PaletteIcon,
+  PlusIcon,
+  Trash2Icon,
+  XIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { MindNode, MindmapContent } from "@/lib/action-templates";
+import { NOTE_COLORS, type MindNode, type MindmapContent, type NoteColor } from "@/lib/action-templates";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InsightPicker } from "./insight-picker";
 
 const COL = 270; // 階層ごとの横幅
@@ -30,7 +41,7 @@ function layout(root: MindNode) {
   const walk = (n: MindNode, depth: number, parentId: string | null): number => {
     const h = nodeHeight(n, depth === 0);
     let cy: number;
-    if (n.children.length === 0) {
+    if (n.children.length === 0 || n.collapsed) {
       cy = cursor + h / 2;
       cursor += h + GAP;
     } else {
@@ -72,13 +83,110 @@ export function Mindmap({ value, onChange }: { value: MindmapContent; onChange: 
   const { placed, width, height } = useMemo(() => layout(root), [root]);
   const byId = useMemo(() => new Map(placed.map((p) => [p.node.id, p])), [placed]);
 
+  // 元に戻す／やり直す。文字入力は同じ枝が続く間 1 回分にまとめる
+  const past = useRef<MindNode[]>([]);
+  const future = useRef<MindNode[]>([]);
+  const lastText = useRef<{ id: string; at: number } | null>(null);
+  const [dragging, setDragging] = useState<{ id: string; x: number; y: number; over: string | null } | null>(null);
+
   /** 複製した木を書き換えて保存 */
-  const mutate = (fn: (draft: MindNode) => void) => {
+  const mutate = (fn: (draft: MindNode) => void, textOf?: string) => {
+    const now = Date.now();
+    const coalesce = textOf && lastText.current?.id === textOf && now - lastText.current.at < 1500;
+    if (!coalesce) {
+      past.current.push(root);
+      if (past.current.length > 100) past.current.shift();
+    }
+    lastText.current = textOf ? { id: textOf, at: now } : null;
+    future.current = [];
     const draft = structuredClone(root);
     fn(draft);
     setRoot(draft);
     onChange({ root: draft });
   };
+  const undo = () => {
+    const prev = past.current.pop();
+    if (!prev) return;
+    future.current.push(root);
+    lastText.current = null;
+    setRoot(prev);
+    onChange({ root: prev });
+  };
+  const redo = () => {
+    const next = future.current.pop();
+    if (!next) return;
+    past.current.push(root);
+    setRoot(next);
+    onChange({ root: next });
+  };
+  const setColor = (id: string, color: NoteColor | null) =>
+    mutate((d) => {
+      const hit = findWithParent(d, id);
+      if (hit) hit.node.color = color;
+    });
+  const toggleCollapse = (id: string) =>
+    mutate((d) => {
+      const hit = findWithParent(d, id);
+      if (hit) hit.node.collapsed = !hit.node.collapsed;
+    });
+  /** 兄弟の中で上下に並べ替え */
+  const reorder = (id: string, dir: -1 | 1) => {
+    mutate((d) => {
+      const hit = findWithParent(d, id);
+      if (!hit?.parent) return;
+      const list = hit.parent.children;
+      const i = list.findIndex((c) => c.id === id);
+      const j = i + dir;
+      if (j < 0 || j >= list.length) return;
+      [list[i], list[j]] = [list[j], list[i]];
+    });
+    setFocusId(id);
+  };
+  /** 枝をドラッグして別の枝の子にする */
+  const reparent = (id: string, target: string) => {
+    if (id === target) return;
+    const moving = findWithParent(root, id)?.node;
+    if (!moving || findWithParent(moving, target)) return; // 自分の子孫には移せない
+    mutate((d) => {
+      const hit = findWithParent(d, id);
+      const to = findWithParent(d, target)?.node;
+      if (!hit?.parent || !to) return;
+      hit.parent.children = hit.parent.children.filter((c) => c.id !== id);
+      to.children.push(hit.node);
+      to.collapsed = false;
+    });
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+      e.preventDefault();
+      if (e.shiftKey) redo();
+      else undo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (e: PointerEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-mind-id]");
+      setDragging((d) => d && { ...d, x: e.clientX, y: e.clientY, over: el?.dataset.mindId ?? null });
+    };
+    const up = () => {
+      setDragging((d) => {
+        if (d?.over) reparent(d.id, d.over);
+        return null;
+      });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+  });
 
   const addChild = (id: string) => {
     const n = newNode();
@@ -130,10 +238,11 @@ export function Mindmap({ value, onChange }: { value: MindmapContent; onChange: 
     });
     setFocusId(next);
   };
-  const setText = (id: string, text: string) => mutate((d) => {
-    const hit = findWithParent(d, id);
-    if (hit) hit.node.text = text;
-  });
+  const setText = (id: string, text: string) =>
+    mutate((d) => {
+      const hit = findWithParent(d, id);
+      if (hit) hit.node.text = text;
+    }, id);
   const linkInsight = (id: string, insight: { id: string; title: string } | null) =>
     mutate((d) => {
       const hit = findWithParent(d, id);
@@ -150,7 +259,10 @@ export function Mindmap({ value, onChange }: { value: MindmapContent; onChange: 
           <kbd className="rounded border bg-zinc-50 px-1">Enter</kbd> 兄弟を追加 ·<kbd className="ml-1 rounded border bg-zinc-50 px-1">Tab</kbd> 子に ·
           <kbd className="ml-1 rounded border bg-zinc-50 px-1">Shift+Tab</kbd> 親の階層へ ·<kbd className="ml-1 rounded border bg-zinc-50 px-1">⌫</kbd> 空の枝を削除
         </span>
-        <span className="ml-auto">枝の 💡 から、インサイトを葉に紐づけられます</span>
+        <span>
+          ·<kbd className="ml-1 rounded border bg-zinc-50 px-1">Alt+↑↓</kbd> 並べ替え ·<kbd className="ml-1 rounded border bg-zinc-50 px-1">⌘Z</kbd> 元に戻す
+        </span>
+        <span className="ml-auto">枝のメニューから 色・折りたたみ・💡インサイト・移動（ドラッグで別の枝へ）</span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto bg-zinc-50">
         <div className="relative" style={{ width: Math.max(width, 800), height: Math.max(height, 400) }}>
@@ -180,10 +292,24 @@ export function Mindmap({ value, onChange }: { value: MindmapContent; onChange: 
               onAddChild={() => addChild(p.node.id)}
               onRemove={() => remove(p.node.id)}
               onLink={(i) => linkInsight(p.node.id, i)}
+              onColor={(c) => setColor(p.node.id, c)}
+              onToggle={() => toggleCollapse(p.node.id)}
+              onReorder={(dir) => reorder(p.node.id, dir)}
+              onDragStart={(e) => setDragging({ id: p.node.id, x: e.clientX, y: e.clientY, over: null })}
+              dropTarget={!!dragging && dragging.over === p.node.id && dragging.id !== p.node.id}
+              isDragging={dragging?.id === p.node.id}
             />
           ))}
         </div>
       </div>
+      {dragging && (
+        <div
+          className="pointer-events-none fixed z-50 max-w-[220px] truncate rounded-md border border-blue-300 bg-white px-3 py-1.5 text-[13px] shadow-lg"
+          style={{ left: dragging.x + 12, top: dragging.y + 12 }}
+        >
+          {findWithParent(root, dragging.id)?.node.text || "（空の枝）"}
+        </div>
+      )}
     </div>
   );
 }
@@ -199,6 +325,12 @@ function MindNodeBox({
   onAddChild,
   onRemove,
   onLink,
+  onColor,
+  onToggle,
+  onReorder,
+  onDragStart,
+  dropTarget,
+  isDragging,
 }: {
   p: Placed;
   focus: boolean;
@@ -210,75 +342,152 @@ function MindNodeBox({
   onAddChild: () => void;
   onRemove: () => void;
   onLink: (i: { id: string; title: string } | null) => void;
+  onColor: (c: NoteColor | null) => void;
+  onToggle: () => void;
+  onReorder: (dir: -1 | 1) => void;
+  onDragStart: (e: React.PointerEvent) => void;
+  dropTarget: boolean;
+  isDragging: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const isRoot = !p.parentId;
+  const n = p.node;
+  const tone = n.color ? NOTE_COLORS[n.color] : null;
+  const hiddenKids = n.collapsed ? countDescendants(n) : 0;
   useEffect(() => {
     if (focus) {
       ref.current?.focus();
       onFocused();
     }
   }, [focus, onFocused]);
+  const btn = "inline-flex size-6 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50";
   return (
     <div
+      data-mind-id={n.id}
       className={cn(
-        "group absolute flex flex-col rounded-lg border bg-white px-3 shadow-xs focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100",
-        isRoot ? "border-zinc-900 bg-zinc-900" : "border-zinc-300"
+        "group absolute flex flex-col rounded-lg border px-3 shadow-xs hover:z-10 focus-within:z-10 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100",
+        isRoot && !tone ? "border-zinc-900 bg-zinc-900" : "border-zinc-300 bg-white",
+        dropTarget && "ring-4 ring-blue-300",
+        isDragging && "opacity-40"
       )}
-      style={{ left: p.cx, top: p.cy - p.h / 2, width: NODE_W, height: p.h }}
+      style={{
+        left: p.cx,
+        top: p.cy - p.h / 2,
+        width: NODE_W,
+        height: p.h,
+        ...(tone ? { background: tone.bg, borderColor: tone.border } : {}),
+      }}
     >
       <textarea
         ref={ref}
         rows={1}
-        value={p.node.text}
+        value={n.text}
         placeholder={isRoot ? "中心の問い（例：なぜ〜なのか）" : "枝を入力"}
         aria-label={isRoot ? "中心の問い" : "枝"}
         onChange={(e) => onText(e.target.value.replace(/\n/g, ""))}
         onKeyDown={(e) => {
           if (e.nativeEvent.isComposing) return;
-          if (e.key === "Enter") {
+          if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+            e.preventDefault();
+            onReorder(e.key === "ArrowUp" ? -1 : 1);
+          } else if (e.key === "Enter") {
             e.preventDefault();
             onEnter();
           } else if (e.key === "Tab") {
             e.preventDefault();
             if (e.shiftKey) onShiftTab();
             else onTab();
-          } else if (e.key === "Backspace" && !p.node.text && !isRoot && p.node.children.length === 0) {
+          } else if (e.key === "Backspace" && !n.text && !isRoot && n.children.length === 0) {
             e.preventDefault();
             onRemove();
           }
         }}
         className={cn(
           "w-full flex-1 resize-none overflow-hidden bg-transparent py-2.5 text-[13px] leading-5 outline-none",
-          isRoot ? "font-semibold text-white placeholder:text-zinc-400" : "text-zinc-900 placeholder:text-zinc-400"
+          isRoot && !tone ? "font-semibold text-white placeholder:text-zinc-400" : "text-zinc-900 placeholder:text-zinc-400",
+          isRoot && tone && "font-semibold"
         )}
       />
-      {p.node.insightId && (
+      {n.insightId && (
         <span className="-mt-2 mb-1.5 inline-flex max-w-full items-center gap-1 text-[10.5px] leading-4 text-blue-700">
           <LightbulbIcon className="size-3 shrink-0" />
-          <Link href={`/insights?node=${p.node.insightId}`} className="truncate hover:underline">
-            {p.node.insightTitle || "インサイト"}
+          <Link href={`/insights?node=${n.insightId}`} className="truncate hover:underline">
+            {n.insightTitle || "インサイト"}
           </Link>
           <button type="button" aria-label="紐づけを外す" onClick={() => onLink(null)} className="text-zinc-400 hover:text-zinc-700">
             <XIcon className="size-3" />
           </button>
         </span>
       )}
-      <div className="absolute -right-[76px] top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-focus-within:flex group-hover:flex">
-        <button type="button" aria-label="子の枝を追加" onClick={onAddChild} className="inline-flex size-6 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50">
+      {n.children.length > 0 && (
+        <button
+          type="button"
+          aria-label={n.collapsed ? "枝を開く" : "枝を折りたたむ"}
+          onClick={onToggle}
+          className="absolute -right-3 top-1/2 inline-flex h-5 min-w-5 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-300 bg-white px-1 text-[10px] text-zinc-600 hover:bg-zinc-50"
+        >
+          {n.collapsed ? `+${hiddenKids}` : <ChevronLeftIcon className="size-3" />}
+        </button>
+      )}
+      <div className="absolute -top-8 left-0 hidden items-center gap-0.5 group-focus-within:flex group-hover:flex">
+        <button type="button" aria-label="子の枝を追加" title="子の枝を追加（Tab）" onClick={onAddChild} className={btn}>
           <PlusIcon className="size-3.5" />
         </button>
         <InsightPicker onPick={(i) => onLink(i)}>
-          <button type="button" aria-label="インサイトを紐づけ" className="inline-flex size-6 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50">
+          <button type="button" aria-label="インサイトを紐づけ" title="インサイトを紐づけ" className={btn}>
             <LightbulbIcon className="size-3.5" />
           </button>
         </InsightPicker>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" aria-label="色" title="色" className={btn}>
+              <PaletteIcon className="size-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="flex gap-1 p-1.5">
+            <button type="button" aria-label="色なし" onClick={() => onColor(null)} className="size-6 rounded-full border-2 border-zinc-300 bg-white" />
+            {(Object.keys(NOTE_COLORS) as NoteColor[]).map((c) => (
+              <button
+                key={c}
+                type="button"
+                aria-label={`色：${c}`}
+                onClick={() => onColor(c)}
+                style={{ background: NOTE_COLORS[c].bg, borderColor: NOTE_COLORS[c].border }}
+                className="size-6 rounded-full border-2"
+              />
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         {!isRoot && (
-          <button type="button" aria-label="枝を削除" onClick={onRemove} className="inline-flex size-6 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50">
-            <Trash2Icon className="size-3.5" />
-          </button>
+          <>
+            <button type="button" aria-label="上へ" title="上へ（Alt+↑）" onClick={() => onReorder(-1)} className={btn}>
+              <ArrowUpIcon className="size-3.5" />
+            </button>
+            <button type="button" aria-label="下へ" title="下へ（Alt+↓）" onClick={() => onReorder(1)} className={btn}>
+              <ArrowDownIcon className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label="ドラッグして別の枝へ移動"
+              title="ドラッグして別の枝へ移動"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                onDragStart(e);
+              }}
+              className={cn(btn, "cursor-grab active:cursor-grabbing")}
+            >
+              <GripVerticalIcon className="size-3.5" />
+            </button>
+            <button type="button" aria-label="枝を削除" title="枝を削除（子の枝も消えます）" onClick={onRemove} className={btn}>
+              <Trash2Icon className="size-3.5" />
+            </button>
+          </>
         )}
       </div>
     </div>
   );
+}
+
+function countDescendants(n: MindNode): number {
+  return n.children.reduce((sum, c) => sum + 1 + countDescendants(c), 0);
 }

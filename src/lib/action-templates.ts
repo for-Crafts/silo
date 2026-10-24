@@ -4,18 +4,27 @@ export type BoardNote = {
   id: string;
   x: number;
   y: number;
+  /** 未指定なら既定サイズ（付箋 180×120） */
+  w?: number;
+  h?: number;
   text: string;
   color: NoteColor;
+  /** note=付箋、text=背景なしの文字 */
+  kind?: "note" | "text";
+  size?: "s" | "m" | "l";
   insightId?: string | null;
   insightTitle?: string | null;
 };
-export type BoardFrame = { id: string; x: number; y: number; w: number; h: number; title: string };
-export type BoardContent = { notes: BoardNote[]; frames: BoardFrame[] };
+export type BoardFrame = { id: string; x: number; y: number; w: number; h: number; title: string; color?: NoteColor };
+export type BoardEdge = { id: string; from: string; to: string };
+export type BoardContent = { notes: BoardNote[]; frames: BoardFrame[]; edges?: BoardEdge[] };
 
 export type MindNode = {
   id: string;
   text: string;
   children: MindNode[];
+  color?: NoteColor | null;
+  collapsed?: boolean;
   insightId?: string | null;
   insightTitle?: string | null;
 };

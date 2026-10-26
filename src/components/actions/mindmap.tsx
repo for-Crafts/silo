@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NOTE_COLORS, type MindNode, type MindmapContent, type NoteColor } from "@/lib/action-templates";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InsightPicker } from "./insight-picker";
 
 const COL = 270; // 階層ごとの横幅
@@ -444,16 +444,16 @@ function MindNodeBox({
               <PaletteIcon className="size-3.5" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="flex gap-1 p-1.5">
-            <button type="button" aria-label="色なし" onClick={() => onColor(null)} className="size-6 rounded-full border-2 border-zinc-300 bg-white" />
+          <DropdownMenuContent align="start" className="flex min-w-0 gap-1 p-1.5">
+            {/* 色を選んだらメニューを閉じる（DropdownMenuItem は選択で自動的に閉じる） */}
+            <DropdownMenuItem aria-label="色なし" onSelect={() => onColor(null)} className="size-6 rounded-full border-2 border-zinc-300 bg-white p-0" />
             {(Object.keys(NOTE_COLORS) as NoteColor[]).map((c) => (
-              <button
+              <DropdownMenuItem
                 key={c}
-                type="button"
                 aria-label={`色：${c}`}
-                onClick={() => onColor(c)}
+                onSelect={() => onColor(c)}
                 style={{ background: NOTE_COLORS[c].bg, borderColor: NOTE_COLORS[c].border }}
-                className="size-6 rounded-full border-2"
+                className="size-6 rounded-full border-2 p-0 focus:ring-2 focus:ring-zinc-900"
               />
             ))}
           </DropdownMenuContent>

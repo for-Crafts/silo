@@ -119,11 +119,22 @@ export function Board({ value, onChange }: { value: BoardContent; onChange: (v: 
     const r = canvas.current!.getBoundingClientRect();
     return { x: (e.clientX - r.left) / zoom, y: (e.clientY - r.top) / zoom };
   };
+  /** 画面の中央。既存の付箋と重なるときは右下へずらして空いている場所を探す */
   const viewCenter = () => {
     const el = scroller.current;
-    return el
+    const c = el
       ? { x: (el.scrollLeft + el.clientWidth / 2) / zoom, y: (el.scrollTop + el.clientHeight / 2) / zoom }
       : { x: 300, y: 300 };
+    const hits = (x: number, y: number) =>
+      board.notes.some((n) => {
+        const b = noteBox(n);
+        return x - NOTE_W / 2 < b.x + b.w && x + NOTE_W / 2 > b.x && y - NOTE_H / 2 < b.y + b.h && y + NOTE_H / 2 > b.y;
+      });
+    for (let i = 0; i < 30 && hits(c.x, c.y); i++) {
+      c.x += 40;
+      c.y += 30;
+    }
+    return c;
   };
 
   // ---- 追加 ----

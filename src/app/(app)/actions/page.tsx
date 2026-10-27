@@ -8,7 +8,7 @@ export default async function ActionsPage() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("action")
-    .select("id, workspace_id, type, template, title, created_by, created_at, updated_at, deleted_at")
+    .select("id, workspace_id, type, template, title, source, created_by, created_at, updated_at, deleted_at")
     .is("deleted_at", null)
     .order("updated_at", { ascending: false });
   return <ActionList actions={(data ?? []) as ActionItem[]} />;

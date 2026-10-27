@@ -7,12 +7,19 @@ import { createClient } from "@/lib/supabase/client";
 /** ログインは Google（for-crafts.com のアカウント）のみ。入れる人は member テーブルで管理する。 */
 export function LoginForm() {
   const params = useSearchParams();
+  // ログイン後に戻る先（Claude の同意画面など）。同じサイト内のパスだけ受け付ける
+  const nextParam = params.get("next");
+  const next = nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : null;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(params.get("error") ? "ログインできませんでした。もう一度お試しください" : "");
 
   async function signIn() {
     setLoading(true);
     setError("");
+    // 戻り先は Cookie で渡す（リダイレクト URL の許可リストを増やさずに済む）
+    document.cookie = next
+      ? `silo_next=${encodeURIComponent(next)}; Path=/; Max-Age=600; SameSite=Lax; Secure`
+      : "silo_next=; Path=/; Max-Age=0";
     const { error } = await createClient().auth.signInWithOAuth({
       provider: "google",
       options: {

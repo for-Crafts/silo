@@ -13,7 +13,7 @@ export default async function ResearchPage() {
       .select("id, workspace_id, folder_id, title, subject, tags, status, ext_id, created_by, updated_by, created_at, updated_at, deleted_at")
       .is("deleted_at", null)
       .order("updated_at", { ascending: false }),
-    supabase.from("fact").select("research_id").is("deleted_at", null),
+    supabase.from("fact").select("research_id").is("deleted_at", null).eq("status", "accepted"),
   ]);
 
   const factCounts: Record<string, number> = {};

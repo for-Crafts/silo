@@ -19,6 +19,7 @@ export function InsightPicker({ children, onPick }: { children: React.ReactNode;
       .select("id, title")
       .is("deleted_at", null)
       .eq("is_inbox", false)
+      .eq("status", "accepted")
       .order("title")
       .then(({ data }) => {
         cached = (data ?? []).map((d) => ({ id: d.id, title: d.title || "無題のテーマ" }));

@@ -170,7 +170,12 @@ export function ActionList({ actions: initial }: { actions: ActionItem[] }) {
                       className="h-7 min-w-0 flex-1 rounded border border-blue-400 px-2 outline-none"
                     />
                   ) : (
-                    <span className="truncate font-medium">{a.title || `${tpl.short}（名称未設定）`}</span>
+                    <>
+                      <span className="truncate font-medium">{a.title || `${tpl.short}（名称未設定）`}</span>
+                      {a.source === "claude" && (
+                        <span className="shrink-0 rounded bg-violet-50 px-1.5 py-0.5 text-[10.5px] font-medium text-violet-700">Claude が作成</span>
+                      )}
+                    </>
                   )}
                 </div>
                 <div className="text-[13px] text-zinc-600">{tpl.short}</div>

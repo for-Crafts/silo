@@ -15,10 +15,11 @@ async function searchItems(query: string): Promise<MentionItem[]> {
       .from("insight")
       .select("id, title, is_inbox")
       .is("deleted_at", null)
+      .eq("status", "accepted")
       .ilike("title", q ? like : "%")
       .limit(8),
     q
-      ? supabase.from("fact").select("id, text, insight_id").is("deleted_at", null).ilike("text", like).limit(8)
+      ? supabase.from("fact").select("id, text, insight_id").is("deleted_at", null).eq("status", "accepted").ilike("text", like).limit(8)
       : Promise.resolve({ data: [] as { id: string; text: string; insight_id: string | null }[] }),
   ]);
   const out: MentionItem[] = [];

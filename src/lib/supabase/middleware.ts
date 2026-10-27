@@ -1,7 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/auth"];
+// /api/mcp と /.well-known は Claude（OAuth トークン）用。Cookie ログインの判定から外す
+const PUBLIC_PATHS = ["/login", "/auth", "/api/mcp", "/.well-known"];
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -35,14 +36,14 @@ export async function updateSession(request: NextRequest) {
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    url.search = "";
+    // ログイン後に元のページ（Claude の同意画面など）へ戻れるようにする
+    url.search = path === "/" ? "" : `?next=${encodeURIComponent(path + request.nextUrl.search)}`;
     return NextResponse.redirect(url);
   }
   if (user && path === "/login") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/research";
-    url.search = "";
-    return NextResponse.redirect(url);
+    const next = request.nextUrl.searchParams.get("next");
+    const safe = next && next.startsWith("/") && !next.startsWith("//") ? next : "/research";
+    return NextResponse.redirect(new URL(safe, request.url));
   }
   if (path === "/") {
     const url = request.nextUrl.clone();

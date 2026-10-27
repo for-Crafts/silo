@@ -11,6 +11,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   ClipboardListIcon,
+  SparklesIcon,
   FolderIcon,
   MoreHorizontalIcon,
   TagIcon,
@@ -54,7 +55,7 @@ type Patchable = Pick<ResearchFile, "title" | "subject" | "background" | "overvi
 
 export function ResearchDetail({ research, folders, utterances, facts: initialFacts, hasTranscript }: Props) {
   const router = useRouter();
-  const { userId, workspaceId } = useWorkspace();
+  const { userId, workspaceId, inboxInsightId } = useWorkspace();
   const emailOf = useMemberEmail();
 
   const [title, setTitle] = useState(research.title);
@@ -62,7 +63,44 @@ export function ResearchDetail({ research, folders, utterances, facts: initialFa
   const [tags, setTags] = useState<string[]>(research.tags);
   const [status, setStatus] = useState(research.status);
   const [folderId, setFolderId] = useState<string | null>(research.folder_id);
-  const [facts, setFacts] = useState<FactWithInsight[]>(initialFacts);
+  // 登録済み（accepted）と、Claude の提案（proposed）を分けて持つ
+  const [facts, setFacts] = useState<FactWithInsight[]>(() => initialFacts.filter((f) => (f.status ?? "accepted") === "accepted"));
+  const [proposals, setProposals] = useState<FactWithInsight[]>(() => initialFacts.filter((f) => f.status === "proposed"));
+
+  /** 提案を採用（→ 受信箱「あとで分類する」へ）または却下。画面を先に更新して裏で保存 */
+  async function decideProposals(targets: FactWithInsight[], accept: boolean) {
+    if (!targets.length) return;
+    const ids = new Set(targets.map((t) => t.id));
+    const taken = new Set(facts.map((f) => f.utterance_id).filter(Boolean));
+    // 同じ発話にすでに登録済みのファクトがあるものは、採用できない（発話 1 行 = ファクト 1 件）
+    const blocked = accept ? targets.filter((t) => t.utterance_id && taken.has(t.utterance_id)) : [];
+    const go = targets.filter((t) => !blocked.includes(t));
+    setProposals((ps) => ps.filter((p) => !ids.has(p.id) || blocked.includes(p)));
+    if (accept)
+      setFacts((fs) => [
+        ...go.map((t) => ({
+          ...t,
+          status: "accepted" as const,
+          insight_id: t.insight_id ?? inboxInsightId,
+          insight: t.insight ?? (inboxInsightId ? { id: inboxInsightId, title: "", is_inbox: true } : null),
+        })),
+        ...fs,
+      ]);
+    const supabase = createClient();
+    const results = await Promise.all(
+      go.map((t) =>
+        supabase
+          .from("fact")
+          .update(accept ? { status: "accepted", insight_id: t.insight_id ?? inboxInsightId } : { status: "rejected", deleted_at: new Date().toISOString() })
+          .eq("id", t.id)
+      )
+    );
+    if (results.some((r) => r.error)) {
+      toast.error(SAVE_ERROR);
+      router.refresh();
+    } else if (go.length) toast.success(accept ? `${go.length} 件を採用しました（「あとで分類する」へ）` : `${go.length} 件を却下しました`);
+    if (blocked.length) toast(`${blocked.length} 件は同じ発話のファクトが登録済みのため採用できませんでした`);
+  }
   const [meta, setMeta] = useState({ updated_at: research.updated_at, updated_by: research.updated_by });
   const [activeEditor, setActiveEditor] = useState<Editor | null>(null);
   const backgroundEditor = useRef<Editor | null>(null);
@@ -318,7 +356,7 @@ export function ResearchDetail({ research, folders, utterances, facts: initialFa
             </div>
           </div>
 
-          <RelatedFacts facts={facts} emailOf={emailOf} />
+          <RelatedFacts facts={facts} proposals={proposals} onDecide={decideProposals} emailOf={emailOf} />
         </div>
       </main>
     </div>
@@ -378,9 +416,64 @@ function relative(iso: string) {
   return formatDateTime(iso);
 }
 
-function RelatedFacts({ facts, emailOf }: { facts: FactWithInsight[]; emailOf: (id: string | null | undefined) => string }) {
+function RelatedFacts({
+  facts,
+  proposals,
+  onDecide,
+  emailOf,
+}: {
+  facts: FactWithInsight[];
+  proposals: FactWithInsight[];
+  onDecide: (targets: FactWithInsight[], accept: boolean) => void;
+  emailOf: (id: string | null | undefined) => string;
+}) {
   return (
     <aside className="flex min-w-[260px] flex-[0_1_300px] flex-col gap-1.5 pt-3">
+      {proposals.length > 0 && (
+        <section aria-label="AI 提案" className="mb-4 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="inline-flex items-center gap-1.5 text-[13px] font-bold text-violet-800">
+              <SparklesIcon className="size-3.5" />
+              AI 提案（{proposals.length}）
+            </span>
+            <div className="flex gap-1">
+              <button type="button" onClick={() => onDecide(proposals, true)} className="h-6 rounded px-2 text-[11px] font-medium text-violet-800 hover:bg-violet-100">
+                すべて採用
+              </button>
+              <button type="button" onClick={() => onDecide(proposals, false)} className="h-6 rounded px-2 text-[11px] text-zinc-500 hover:bg-violet-100">
+                すべて却下
+              </button>
+            </div>
+          </div>
+          <p className="mb-2 text-[11px] leading-relaxed text-violet-900/70">Claude が議事録から抽出した候補です。採用すると「あとで分類する」に入ります</p>
+          <ul className="flex flex-col gap-2">
+            {proposals.map((p) => (
+              <li key={p.id} className="rounded-md border border-violet-100 bg-white p-2.5">
+                {p.quote && (
+                  <div className="mb-1.5 line-clamp-3 border-l-2 border-violet-200 pl-2 text-[11px] leading-relaxed text-zinc-500">{p.quote}</div>
+                )}
+                <div className="text-[13px] font-bold leading-snug">{p.text}</div>
+                {(p.speaker || p.note) && (
+                  <div className="mt-1 text-[11px] text-zinc-500">
+                    {p.speaker}
+                    {p.speaker && p.note && " · "}
+                    {p.note}
+                  </div>
+                )}
+                <div className="mt-2 flex justify-end gap-1">
+                  <button type="button" onClick={() => onDecide([p], false)} className="h-7 rounded-md px-2.5 text-xs text-zinc-600 hover:bg-zinc-100">
+                    却下
+                  </button>
+                  <button type="button" onClick={() => onDecide([p], true)} className="inline-flex h-7 items-center gap-1 rounded-md bg-zinc-950 px-2.5 text-xs font-medium text-white hover:bg-zinc-800">
+                    <CheckIcon className="size-3" />
+                    採用
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <Link href="/insights" className="text-[13px] font-bold text-blue-600">
         関連するファクト({facts.length})
       </Link>

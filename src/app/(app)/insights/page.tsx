@@ -12,9 +12,10 @@ export default async function InsightsPage() {
       .from("insight")
       .select("*")
       .is("deleted_at", null)
+      .neq("status", "rejected")
       .order("sort_order")
       .order("created_at"),
-    supabase.from("fact").select("insight_id").is("deleted_at", null),
+    supabase.from("fact").select("insight_id").is("deleted_at", null).eq("status", "accepted"),
   ]);
 
   const counts: Record<string, number> = {};

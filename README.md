@@ -22,3 +22,7 @@ Next.js 15 (App Router) / TypeScript / Tailwind v4 / shadcn/ui / Tiptap / dnd-ki
 SEED_EMAIL=<admin メール> SUPABASE_SERVICE_ROLE_KEY=<key> pnpm import:centou <data.json> [--dry-run]
 ```
 `centou_file_id` → `research_file.ext_id` で重複スキップ。背景／概要は Tiptap JSON、本文は暗号化議事録、`### all > A > B` はインサイトツリー、箇条書きはファクト（発話行付き）になる。
+
+## Claude との連携（MCP）
+Claude から silo のリサーチ・ファクト・インサイト・ドキュメントを読み、ファクト／インサイトを「AI 提案」として登録し、ドキュメントを作成できる。
+エンドポイントは `/api/mcp`。設定手順と仕組みは [docs/claude-connector.md](docs/claude-connector.md)。

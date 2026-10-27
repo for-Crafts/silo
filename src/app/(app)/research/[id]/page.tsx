@@ -19,6 +19,7 @@ export default async function ResearchDetailPage({ params }: { params: Promise<{
         .select("*, insight:insight_id(id, title, is_inbox)")
         .eq("research_id", id)
         .is("deleted_at", null)
+        .neq("status", "rejected")
         .order("created_at", { ascending: false }),
       supabase.rpc("has_transcript", { p_research_id: id }),
     ]);

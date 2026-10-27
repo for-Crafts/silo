@@ -64,6 +64,11 @@ export type Insight = {
   importance: "高" | "中" | "低" | null;
   sort_order: number;
   is_inbox: boolean;
+  /** proposed = Claude の提案（人が採用するまで正式データではない） */
+  status?: "proposed" | "accepted" | "rejected";
+  source?: "human" | "claude";
+  rationale?: string;
+  proposed_fact_ids?: string[];
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -79,6 +84,9 @@ export type Fact = {
   text: string;
   speaker: string;
   note: string;
+  status?: "proposed" | "accepted" | "rejected";
+  source?: "human" | "claude";
+  quote?: string;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -101,6 +109,7 @@ export type ActionItem = {
   template: ActionTemplate | null;
   title: string;
   content: unknown;
+  source?: "human" | "claude";
   created_by: string | null;
   created_at: string;
   updated_at: string;

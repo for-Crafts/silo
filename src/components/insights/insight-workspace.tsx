@@ -15,7 +15,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { GripVerticalIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { GripVerticalIcon, PlusIcon, SearchIcon, SparklesIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/components/app/workspace-context";
 import { beginSave, endSave } from "@/lib/save-status";
@@ -80,6 +80,7 @@ export function InsightWorkspace({ insights: initial, counts: initialCounts }: {
         .from("fact")
         .select(FACT_COLUMNS)
         .eq("insight_id", id)
+        .eq("status", "accepted")
         .is("deleted_at", null)
         .order("updated_at", { ascending: false });
       const rows = (data ?? []) as unknown as FactRow[];
@@ -113,7 +114,7 @@ export function InsightWorkspace({ insights: initial, counts: initialCounts }: {
   const byParent = useMemo(() => {
     const m = new Map<string | null, Insight[]>();
     for (const i of insights) {
-      if (i.is_inbox) continue;
+      if (i.is_inbox || i.status === "proposed") continue; // 提案中のテーマはツリーに混ぜない
       const k = i.parent_id;
       if (!m.has(k)) m.set(k, []);
       m.get(k)!.push(i);
@@ -123,6 +124,49 @@ export function InsightWorkspace({ insights: initial, counts: initialCounts }: {
   }, [insights]);
   const childrenOf = useCallback((id: string | null) => byParent.get(id) ?? [], [byParent]);
   const byId = useMemo(() => new Map(insights.map((i) => [i.id, i])), [insights]);
+  const proposals = useMemo(() => insights.filter((i) => i.status === "proposed"), [insights]);
+
+  /** Claude が提案したテーマを採用（ツリーに入れ、紐づくファクトを移す）または却下 */
+  async function decideProposal(p: Insight, accept: boolean) {
+    const supabase = createClient();
+    if (!accept) {
+      setInsights((list) => list.filter((i) => i.id !== p.id));
+      const { error } = await supabase.from("insight").update({ status: "rejected", deleted_at: new Date().toISOString() }).eq("id", p.id);
+      if (error) {
+        toast.error(SAVE_ERROR);
+        setInsights((list) => [...list, p]);
+      }
+      return;
+    }
+    const order = childrenOf(p.parent_id).length;
+    patchLocal(p.id, { status: "accepted", sort_order: order });
+    beginSave();
+    const factIds = p.proposed_fact_ids ?? [];
+    const { data: before } = factIds.length
+      ? await supabase.from("fact").select("id, insight_id").in("id", factIds).eq("status", "accepted").is("deleted_at", null)
+      : { data: [] as { id: string; insight_id: string | null }[] };
+    const [a, b] = await Promise.all([
+      supabase.from("insight").update({ status: "accepted", sort_order: order }).eq("id", p.id),
+      before?.length ? supabase.from("fact").update({ insight_id: p.id }).in("id", before.map((f) => f.id)) : null,
+    ]);
+    const ok = !a.error && !b?.error;
+    endSave(ok);
+    if (!ok) {
+      toast.error(SAVE_ERROR);
+      patchLocal(p.id, { status: "proposed" });
+      return;
+    }
+    // 件数とキャッシュを更新
+    setCounts((c) => {
+      const next = { ...c, [p.id]: (c[p.id] ?? 0) + (before?.length ?? 0) };
+      for (const f of before ?? []) if (f.insight_id) next[f.insight_id] = Math.max(0, (next[f.insight_id] ?? 1) - 1);
+      return next;
+    });
+    for (const f of before ?? []) if (f.insight_id) cache.current.delete(f.insight_id);
+    cache.current.delete(p.id);
+    toast.success(`「${p.title}」をツリーに追加しました${before?.length ? `（ファクト ${before.length} 件を移動）` : ""}`);
+    select(p.id);
+  }
 
   const isDescendant = (maybeChild: string, ancestor: string) => {
     let cur = byId.get(maybeChild)?.parent_id ?? null;
@@ -346,13 +390,43 @@ export function InsightWorkspace({ insights: initial, counts: initialCounts }: {
         <aside className="flex w-[340px] shrink-0 flex-col border-r bg-zinc-50">
           <div className="flex items-center justify-between px-4 pb-2 pt-5">
             <h1 className="text-[15px] font-semibold">インサイトツリー</h1>
-            <span className="text-xs text-zinc-500">{insights.length - (inbox ? 1 : 0)} テーマ</span>
+            <span className="text-xs text-zinc-500">{insights.filter((i) => !i.is_inbox && i.status !== "proposed").length} テーマ</span>
           </div>
           <div className="relative px-3 pb-2">
             <SearchIcon className="pointer-events-none absolute left-5 top-2.5 size-3.5 text-zinc-400" />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="テーマを検索" className="h-8 bg-white pl-7 text-[13px]" />
           </div>
           <div role="tree" aria-label="インサイトツリー" className="min-h-0 flex-1 overflow-auto px-2 pb-4">
+            {proposals.length > 0 && (
+              <section aria-label="AI 提案" className="mb-2 rounded-lg border border-violet-200 bg-violet-50/60 p-2">
+                <div className="flex items-center justify-between px-1 pb-1.5">
+                  <span className="inline-flex items-center gap-1.5 text-[12px] font-bold text-violet-800">
+                    <SparklesIcon className="size-3.5" />
+                    AI 提案（{proposals.length}）
+                  </span>
+                  <span className="text-[10.5px] text-violet-900/60">採用するとツリーに入ります</span>
+                </div>
+                <ul className="flex flex-col gap-1.5">
+                  {proposals.map((p) => (
+                    <li key={p.id} className="rounded-md border border-violet-100 bg-white p-2">
+                      <div className="text-[13px] font-semibold leading-snug">{p.title || "無題のテーマ"}</div>
+                      <div className="mt-0.5 text-[11px] text-zinc-500">
+                        {p.parent_id ? `「${byId.get(p.parent_id)?.title || "無題"}」の下` : "トップレベル"} · ファクト {p.proposed_fact_ids?.length ?? 0} 件
+                      </div>
+                      {p.rationale && <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-zinc-600">{p.rationale}</p>}
+                      <div className="mt-1.5 flex justify-end gap-1">
+                        <button type="button" onClick={() => decideProposal(p, false)} className="h-6 rounded px-2 text-[11px] text-zinc-600 hover:bg-zinc-100">
+                          却下
+                        </button>
+                        <button type="button" onClick={() => decideProposal(p, true)} className="h-6 rounded bg-zinc-950 px-2 text-[11px] font-medium text-white hover:bg-zinc-800">
+                          採用
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
             {inbox && (
               <ul className="mb-2 border-b border-zinc-200 pb-2">
                 <TreeNode node={inbox} depth={0} h={h} />

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MoreHorizontalIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -31,24 +30,48 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-export function ResearchRowMenu({ research, folders }: { research: ResearchListItem; folders: Folder[] }) {
-  const router = useRouter();
+export type ResearchOps = {
+  setResearches: (updater: (rs: ResearchListItem[]) => ResearchListItem[]) => void;
+};
+
+export function ResearchRowMenu({
+  research,
+  folders,
+  ops,
+}: {
+  research: ResearchListItem;
+  folders: Folder[];
+  ops: ResearchOps;
+}) {
   const { userId } = useWorkspace();
   const [renaming, setRenaming] = useState(false);
   const [title, setTitle] = useState(research.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  async function update(patch: Record<string, unknown>) {
+  /** 一覧を先に書き換え、裏で保存。失敗したら元の行に戻す */
+  async function update(patch: Partial<ResearchListItem>) {
+    const before = research;
+    const removed = "deleted_at" in patch && patch.deleted_at;
+    ops.setResearches((rs) =>
+      removed ? rs.filter((r) => r.id !== research.id) : rs.map((r) => (r.id === research.id ? { ...r, ...patch } : r))
+    );
     const { error } = await createClient()
       .from("research_file")
       .update({ ...patch, updated_by: userId })
       .eq("id", research.id);
     if (error) {
       toast.error(SAVE_ERROR);
+      ops.setResearches((rs) =>
+        removed ? [before, ...rs] : rs.map((r) => (r.id === before.id ? before : r))
+      );
       return false;
     }
-    router.refresh();
     return true;
+  }
+
+  function submitRename() {
+    setRenaming(false);
+    if (title.trim() !== research.title) void update({ title: title.trim() });
   }
 
   return (
@@ -94,8 +117,8 @@ export function ResearchRowMenu({ research, folders }: { research: ResearchListI
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={async (e) => {
-              if (e.key === "Enter" && (await update({ title }))) setRenaming(false);
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) submitRename();
             }}
           />
           <DialogFooter>
@@ -104,9 +127,7 @@ export function ResearchRowMenu({ research, folders }: { research: ResearchListI
             </Button>
             <Button
               className="bg-zinc-950"
-              onClick={async () => {
-                if (await update({ title })) setRenaming(false);
-              }}
+              onClick={submitRename}
             >
               保存
             </Button>

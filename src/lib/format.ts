@@ -2,6 +2,7 @@ export function formatDateTime(iso: string | null | undefined) {
   if (!iso) return "";
   const d = new Date(iso);
   return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo", // サーバ（UTC）とブラウザで表示がずれないよう固定
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -12,7 +13,7 @@ export function formatDateTime(iso: string | null | undefined) {
 
 export function formatDate(iso: string | null | undefined) {
   if (!iso) return "";
-  return new Intl.DateTimeFormat("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" }).format(
+  return new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).format(
     new Date(iso)
   );
 }

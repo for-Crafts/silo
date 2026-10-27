@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { RESEARCH_COLUMNS, type Folder, type ResearchFile, type Utterance } from "@/lib/types";
-import { ResearchDetail, type FactWithInsight } from "@/components/research/research-detail";
+import { RESEARCH_COLUMNS, type FactWithInsight, type Folder, type ResearchFile, type Utterance } from "@/lib/types";
+import { ResearchDetail } from "@/components/research/research-detail";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,7 @@ export default async function ResearchDetailPage({ params }: { params: Promise<{
         .select("*, insight:insight_id(id, title, is_inbox)")
         .eq("research_id", id)
         .is("deleted_at", null)
-        .order("created_at"),
+        .order("created_at", { ascending: false }),
       supabase.rpc("has_transcript", { p_research_id: id }),
     ]);
 

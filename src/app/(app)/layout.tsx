@@ -10,23 +10,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = claims?.claims ? { id: claims.claims.sub, email: claims.claims.email as string | undefined } : null;
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("member")
-    .select("workspace_id, user_id, email, role, workspace(name)")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-  if (!me) redirect("/not-invited");
-
-  const [{ data: members }, { data: inbox }] = await Promise.all([
-    supabase.from("member").select("workspace_id, user_id, email, role").eq("workspace_id", me.workspace_id),
+  // 3 クエリを並列で 1 往復にまとめる（RLS で自分のワークスペース分しか返らない）
+  const [{ data: me }, { data: allMembers }, { data: inboxes }] = await Promise.all([
     supabase
-      .from("insight")
-      .select("id")
-      .eq("workspace_id", me.workspace_id)
-      .eq("is_inbox", true)
+      .from("member")
+      .select("workspace_id, user_id, email, role, workspace(name)")
+      .eq("user_id", user.id)
+      .limit(1)
       .maybeSingle(),
+    supabase.from("member").select("workspace_id, user_id, email, role"),
+    supabase.from("insight").select("id, workspace_id").eq("is_inbox", true),
   ]);
+  if (!me) redirect("/not-invited");
+  const members = (allMembers ?? []).filter((m) => m.workspace_id === me.workspace_id);
+  const inbox = (inboxes ?? []).find((i) => i.workspace_id === me.workspace_id) ?? null;
 
   const ws = me.workspace as unknown as { name: string } | { name: string }[] | null;
   const workspaceName = Array.isArray(ws) ? ws[0]?.name : ws?.name;

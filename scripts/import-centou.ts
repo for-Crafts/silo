@@ -16,7 +16,7 @@
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
-import { markdownToTiptap } from "./md-to-tiptap";
+import { markdownToTiptap } from "../src/lib/markdown";
 
 config({ path: ".env.local" });
 

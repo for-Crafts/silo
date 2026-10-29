@@ -43,8 +43,8 @@ export function CommandSearch({ open, onOpenChange }: { open: boolean; onOpenCha
     (async () => {
       const [r, i, f] = await Promise.all([
         supabase.from("research_file").select("id, title, subject").is("deleted_at", null).limit(2000),
-        supabase.from("insight").select("id, title, is_inbox").is("deleted_at", null).limit(2000),
-        supabase.from("fact").select("id, text, insight_id").is("deleted_at", null).limit(5000),
+        supabase.from("insight").select("id, title, is_inbox").is("deleted_at", null).eq("status", "accepted").limit(2000),
+        supabase.from("fact").select("id, text, insight_id").is("deleted_at", null).eq("status", "accepted").limit(5000),
       ]);
       setResearch(
         (r.data ?? []).map((x) => ({

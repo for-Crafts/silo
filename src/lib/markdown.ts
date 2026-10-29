@@ -1,4 +1,7 @@
-/** Minimal Markdown -> Tiptap JSON converter (headings, lists, quotes, hr, code, inline marks, links). */
+/**
+ * Markdown ⇄ Tiptap JSON の変換（silo のエディタと Claude 連携の両方で使う）。
+ * 対応：見出し・段落・箇条書き／番号／チェックリスト・引用・区切り線・コード・表・太字／斜体／取り消し／コード／リンク・インサイト参照（mention）
+ */
 import { marked, type Token, type Tokens } from "marked";
 
 type Node = { type: string; attrs?: Record<string, unknown>; content?: Node[]; text?: string; marks?: Mark[] };
@@ -111,10 +114,17 @@ function blocks(tokens: Token[]): Node[] {
       }
       case "table": {
         const tb = t as Tokens.Table;
-        const rows = [tb.header, ...tb.rows];
-        for (const row of rows) {
-          out.push(paragraph(inline(row.flatMap((c, i) => (i ? [{ type: "text", raw: " | ", text: " | " } as Token, ...c.tokens] : c.tokens)))));
-        }
+        const cell = (c: Tokens.TableCell, header: boolean): Node => ({
+          type: header ? "tableHeader" : "tableCell",
+          content: [paragraph(inline(c.tokens))],
+        });
+        out.push({
+          type: "table",
+          content: [
+            { type: "tableRow", content: tb.header.map((c) => cell(c, true)) },
+            ...tb.rows.map((r) => ({ type: "tableRow", content: r.map((c) => cell(c, false)) })),
+          ],
+        });
         break;
       }
       case "html":
@@ -131,4 +141,80 @@ export function markdownToTiptap(md: string): { type: "doc"; content: Node[] } {
   const tokens = marked.lexer(md.replace(/\r\n/g, "\n"), { gfm: true });
   const content = blocks(tokens);
   return { type: "doc", content: content.length ? content : [{ type: "paragraph" }] };
+}
+
+// ---------------------------------------------------------------
+// Tiptap JSON -> Markdown
+// ---------------------------------------------------------------
+type AnyNode = { type?: string; attrs?: Record<string, unknown>; content?: AnyNode[]; text?: string; marks?: Mark[] };
+
+function inlineMd(nodes: AnyNode[] | undefined): string {
+  return (nodes ?? [])
+    .map((n) => {
+      if (n.type === "hardBreak") return "  \n";
+      if (n.type === "mention") {
+        const label = String(n.attrs?.label ?? n.attrs?.id ?? "");
+        const href = n.attrs?.href ? String(n.attrs.href) : "";
+        return href ? `[@${label}](${href})` : `@${label}`;
+      }
+      if (n.type === "image") return `![画像](${String(n.attrs?.src ?? "")})`;
+      let t = n.text ?? "";
+      for (const m of n.marks ?? []) {
+        if (m.type === "bold") t = `**${t}**`;
+        else if (m.type === "italic") t = `*${t}*`;
+        else if (m.type === "strike") t = `~~${t}~~`;
+        else if (m.type === "code") t = "`" + t + "`";
+        else if (m.type === "link") t = `[${t}](${String(m.attrs?.href ?? "")})`;
+      }
+      return t;
+    })
+    .join("");
+}
+
+function blockMd(n: AnyNode, indent = ""): string {
+  const kids = n.content ?? [];
+  switch (n.type) {
+    case "doc":
+      return kids.map((k) => blockMd(k, indent)).filter(Boolean).join("\n\n");
+    case "paragraph":
+      return indent + inlineMd(kids);
+    case "heading":
+      return "#".repeat(Number(n.attrs?.level ?? 2)) + " " + inlineMd(kids);
+    case "blockquote":
+      return kids.map((k) => blockMd(k)).join("\n\n").split("\n").map((l) => "> " + l).join("\n");
+    case "horizontalRule":
+      return "---";
+    case "codeBlock":
+      return "```\n" + inlineMd(kids) + "\n```";
+    case "bulletList":
+    case "orderedList":
+    case "taskList":
+      return kids
+        .map((item, i) => {
+          const bullet =
+            n.type === "orderedList" ? `${i + 1}. ` : n.type === "taskList" ? `- [${item.attrs?.checked ? "x" : " "}] ` : "- ";
+          const [first, ...rest] = item.content ?? [];
+          const head = indent + bullet + (first ? inlineMd(first.content) : "");
+          const tail = rest.map((r) => blockMd(r, indent + "  ")).filter(Boolean);
+          return [head, ...tail].join("\n");
+        })
+        .join("\n");
+    case "table": {
+      const rows = kids.map((r) => (r.content ?? []).map((c) => inlineMd((c.content ?? []).flatMap((p) => p.content ?? [])).replace(/\|/g, "\\|")));
+      if (!rows.length) return "";
+      const head = `| ${rows[0].join(" | ")} |`;
+      const sep = `| ${rows[0].map(() => "---").join(" | ")} |`;
+      return [head, sep, ...rows.slice(1).map((r) => `| ${r.join(" | ")} |`)].join("\n");
+    }
+    case "image":
+      return `![画像](${String(n.attrs?.src ?? "")})`;
+    default:
+      return kids.length ? kids.map((k) => blockMd(k, indent)).join("\n") : inlineMd([n]);
+  }
+}
+
+/** Tiptap JSON（null 可）を Markdown にする。Claude に渡す本文用 */
+export function tiptapToMarkdown(doc: unknown): string {
+  if (!doc || typeof doc !== "object") return "";
+  return blockMd(doc as AnyNode).trim();
 }

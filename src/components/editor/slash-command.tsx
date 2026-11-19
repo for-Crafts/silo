@@ -7,6 +7,7 @@ import {
   Heading2Icon,
   Heading3Icon,
   ImageIcon,
+  LayoutTemplateIcon,
   Grid3x3Icon,
   ListIcon,
   ListOrderedIcon,
@@ -22,9 +23,10 @@ type CommandItem = SuggestionItem & {
   run: (editor: Editor, range: Range) => void;
 };
 
-export const UTTERANCE_TABLE_EVENT = "silo:focus-utterance-table";
 /** エディタに画像を挿入するためのファイル選択を開く（detail.editor に対象エディタ） */
 export const PICK_IMAGE_EVENT = "silo:pick-image";
+/** テンプレートの一覧を開く */
+export const OPEN_TEMPLATES_EVENT = "silo:open-templates";
 
 const ITEMS: CommandItem[] = [
   {
@@ -104,12 +106,32 @@ const ITEMS: CommandItem[] = [
   {
     id: "utterance",
     title: "発話表",
-    description: "ページ下の発話表へ移動",
-    keywords: ["table", "utterance", "hatsuwa"],
+    description: "発話者・インサイト・補足の表（1 ページに 1 つ）",
+    keywords: ["table", "utterance", "hatsuwa", "録画"],
     icon: <TableIcon className="size-4" />,
     run: (e, r) => {
+      let exists = false;
+      e.state.doc.descendants((n) => {
+        if (n.type.name === "utteranceTable") exists = true;
+        return !exists;
+      });
+      if (exists) {
+        e.chain().focus().deleteRange(r).run();
+        document.querySelector("[data-utterance-block]")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      e.chain().focus().deleteRange(r).insertContent({ type: "utteranceTable" }).run();
+    },
+  },
+  {
+    id: "template",
+    title: "テンプレート",
+    description: "保存したテンプレートをここに挿入",
+    keywords: ["template", "tenpure", "ひな形"],
+    icon: <LayoutTemplateIcon className="size-4" />,
+    run: (e, r) => {
       e.chain().focus().deleteRange(r).run();
-      window.dispatchEvent(new CustomEvent(UTTERANCE_TABLE_EVENT));
+      window.dispatchEvent(new CustomEvent(OPEN_TEMPLATES_EVENT));
     },
   },
   {

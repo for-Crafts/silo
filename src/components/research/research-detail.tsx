@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -37,7 +37,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { UtteranceTable } from "./utterance-table";
+import { UtteranceTableContext, docHasUtteranceTable } from "@/components/editor/utterance-block";
+import { TemplateMenu, TemplateStarter } from "@/components/editor/template-menu";
 import { TranscriptSheet } from "./research-transcript";
 import { TagEditor } from "@/components/app/tag-editor";
 
@@ -51,7 +52,31 @@ type Props = {
   hasTranscript: boolean;
 };
 
-type Patchable = Pick<ResearchFile, "title" | "subject" | "background" | "overview" | "tags" | "status" | "folder_id">;
+type Patchable = Pick<ResearchFile, "title" | "subject" | "body" | "tags" | "status" | "folder_id">;
+
+const heading = (text: string): JSONContent => ({ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text }] });
+
+/** body があればそれを、なければ旧形式（背景・概要＋発話表）から 1 ページを組み立てる */
+function buildBody(r: ResearchFile, hasUtterances: boolean): JSONContent {
+  const body = r.body as JSONContent | null;
+  if (body?.content?.length) {
+    // 発話があるのに表ブロックが無い（消してしまった等）なら、末尾に戻す
+    if (hasUtterances && !docHasUtteranceTable(body)) return { ...body, content: [...body.content, { type: "utteranceTable" }] };
+    return body;
+  }
+  const bg = (r.background as JSONContent | null)?.content ?? [];
+  const ov = (r.overview as JSONContent | null)?.content ?? [];
+  if (!bg.length && !ov.length && !hasUtterances) return { type: "doc", content: [{ type: "paragraph" }] };
+  return {
+    type: "doc",
+    content: [heading("背景"), ...bg, heading("インタビュー概要"), ...ov, heading("録画データ"), { type: "utteranceTable" }],
+  };
+}
+
+function isEmptyDoc(doc: JSONContent | null | undefined) {
+  const c = doc?.content ?? [];
+  return c.length === 0 || (c.length === 1 && c[0].type === "paragraph" && !c[0].content?.length);
+}
 
 export function ResearchDetail({ research, folders, utterances, facts: initialFacts, hasTranscript }: Props) {
   const router = useRouter();
@@ -103,7 +128,19 @@ export function ResearchDetail({ research, folders, utterances, facts: initialFa
   }
   const [meta, setMeta] = useState({ updated_at: research.updated_at, updated_by: research.updated_by });
   const [activeEditor, setActiveEditor] = useState<Editor | null>(null);
-  const backgroundEditor = useRef<Editor | null>(null);
+  const pageEditorRef = useRef<Editor | null>(null);
+  const [pageEditor, setPageEditor] = useState<Editor | null>(null);
+
+  // 本文は 1 枚の自由ページ。古いリサーチ（body 未移行）は背景・概要・発話表から組み立てる
+  const [initialBody] = useState<JSONContent>(() => buildBody(research, utterances.length > 0));
+  const [bodyEmpty, setBodyEmpty] = useState(() => isEmptyDoc(initialBody));
+
+  // 発話表の行はページで持つ（本文中のブロックを動かしても消えない）
+  const [rows, setRows] = useState<Utterance[]>(utterances);
+  const tableCtx = useMemo(
+    () => ({ researchId: research.id, rows, setRows, facts, setFacts }),
+    [research.id, rows, facts]
+  );
 
   useEffect(() => {
     resetSaveStatus();
@@ -141,7 +178,7 @@ export function ResearchDetail({ research, folders, utterances, facts: initialFa
   }, []);
 
   const folder = folders.find((f) => f.id === folderId);
-  const toolbarEditor = activeEditor ?? backgroundEditor.current;
+  const toolbarEditor = activeEditor ?? pageEditorRef.current;
 
   async function deleteResearch() {
     const { error } = await createClient()
@@ -192,7 +229,7 @@ export function ResearchDetail({ research, folders, utterances, facts: initialFa
             setTitle(v);
             queue({ title: v });
           }}
-          onEnter={() => backgroundEditor.current?.commands.focus("start")}
+          onEnter={() => pageEditorRef.current?.commands.focus("start")}
         />
 
         {/* メタ情報（Centou 準拠：ラベル列 128px） */}
@@ -307,7 +344,9 @@ export function ResearchDetail({ research, folders, utterances, facts: initialFa
 
         <div className="flex flex-wrap items-start gap-12">
           <div className="min-w-0 flex-[999_1_520px]">
-            <EditorToolbar editor={toolbarEditor} />
+            <EditorToolbar editor={toolbarEditor}>
+              <TemplateMenu editor={pageEditor} />
+            </EditorToolbar>
             <input
               ref={fileInput}
               type="file"
@@ -323,34 +362,25 @@ export function ResearchDetail({ research, folders, utterances, facts: initialFa
             />
 
             <div className="text-[15px] leading-[1.75]">
-              <h2 className="mb-1.5 mt-1 text-xl font-bold">背景</h2>
-              <RichEditor
-                content={(research.background as JSONContent) ?? null}
-                placeholder="面談の背景・目的。「/」でメニュー、画像は貼り付け・ドロップ"
-                onChange={(v) => queue({ background: v })}
-                upload={upload}
-                onFocusEditor={setActiveEditor}
-                onReady={(e) => {
-                  backgroundEditor.current = e;
-                  setActiveEditor((cur) => cur ?? e);
-                }}
-              />
-
-              <h2 className="mb-1.5 mt-[26px] text-xl font-bold">インタビュー概要</h2>
-              <RichEditor
-                content={(research.overview as JSONContent) ?? null}
-                placeholder="インタビュワー・対象者・データの場所など。「/」でメニュー"
-                onChange={(v) => queue({ overview: v })}
-                upload={upload}
-                onFocusEditor={setActiveEditor}
-              />
-
-              <UtteranceTable
-                researchId={research.id}
-                initialUtterances={utterances}
-                facts={facts}
-                setFacts={setFacts}
-              />
+              <UtteranceTableContext.Provider value={tableCtx}>
+                {bodyEmpty && <TemplateStarter editor={pageEditor} />}
+                <RichEditor
+                  content={initialBody}
+                  placeholder="自由に書けます。「/」で見出し・表・発話表・テンプレートを挿入、画像は貼り付け・ドロップ"
+                  onChange={(v) => {
+                    setBodyEmpty(isEmptyDoc(v));
+                    queue({ body: v });
+                  }}
+                  upload={upload}
+                  onFocusEditor={setActiveEditor}
+                  onReady={(e) => {
+                    pageEditorRef.current = e;
+                    setPageEditor(e);
+                    setActiveEditor((cur) => cur ?? e);
+                  }}
+                  className="min-h-[50vh]"
+                />
+              </UtteranceTableContext.Provider>
 
               <TranscriptSheet researchId={research.id} initialHasTranscript={hasTranscript} />
             </div>

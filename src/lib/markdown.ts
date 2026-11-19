@@ -208,6 +208,8 @@ function blockMd(n: AnyNode, indent = ""): string {
     }
     case "image":
       return `![画像](${String(n.attrs?.src ?? "")})`;
+    case "utteranceTable":
+      return "[発話表]";
     default:
       return kids.length ? kids.map((k) => blockMd(k, indent)).join("\n") : inlineMd([n]);
   }

@@ -7,8 +7,7 @@
  * Mapping:
  *   frontmatter.centou_file_id -> research_file.ext_id (duplicates skipped)
  *   folder_name                -> folder (created if missing)
- *   "## 背景"                   -> research_file.background (Tiptap JSON)
- *   "## インタビュー概要" + "## データ" -> research_file.overview
+ *   "## 背景" "## インタビュー概要" "## データ" -> research_file.body（1 枚のページ、末尾に発話表ブロック）
  *   remaining body             -> transcript (encrypted via admin_set_transcript)
  *   "| 発話者 | ... |" rows     -> utterance
  *   "### all > A > B" + bullets -> insight tree + fact (also creates a linked utterance per fact)
@@ -274,8 +273,16 @@ async function main() {
       folder_id: fid,
       title: p.title,
       subject: p.subject,
-      background: p.backgroundMd ? markdownToTiptap(p.backgroundMd) : null,
-      overview: p.overviewMd ? markdownToTiptap(p.overviewMd) : null,
+      // 1 枚のページ：背景 → インタビュー概要・データ → 録画データ（発話表ブロック）
+      body: {
+        type: "doc",
+        content: [
+          ...markdownToTiptap(`## 背景\n${p.backgroundMd}`).content,
+          ...(p.overviewMd ? markdownToTiptap(`## インタビュー概要\n${p.overviewMd}`).content : []),
+          ...markdownToTiptap("## 録画データ").content,
+          { type: "utteranceTable" },
+        ],
+      },
       status: p.status,
       ext_id: p.extId,
       created_by: uid,

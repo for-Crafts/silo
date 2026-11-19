@@ -181,7 +181,7 @@ export function registerSiloTools(server: McpServer) {
     {
       title: "リサーチを読む",
       description:
-        "リサーチ 1 件の全体を取得する：背景・インタビュー概要（Markdown）、発話表（発話者／顧客のインサイト／補足、各行の utterance_id）、登録済みファクトと AI 提案中のファクト。include_transcript=true で暗号化保存された議事録全文も読む（ファクト抽出時に使う）。",
+        "リサーチ 1 件の全体を取得する：ページ本文（Markdown）、発話表（発話者／顧客のインサイト／補足、各行の utterance_id）、登録済みファクトと AI 提案中のファクト。include_transcript=true で暗号化保存された議事録全文も読む（ファクト抽出時に使う）。",
       inputSchema: z.object({
         research_id: z.guid(),
         include_transcript: z.boolean().optional().describe("議事録全文を含める（長い場合は offset で続きを読む）"),
@@ -194,7 +194,7 @@ export function registerSiloTools(server: McpServer) {
       const [{ data: r, error }, { data: utt }, { data: facts }, { data: folders }] = await Promise.all([
         c.supabase
           .from("research_file")
-          .select("id, title, subject, background, overview, tags, status, folder_id, updated_at")
+          .select("id, title, subject, body, background, overview, tags, status, folder_id, updated_at")
           .eq("id", research_id)
           .is("deleted_at", null)
           .maybeSingle(),
@@ -246,8 +246,10 @@ export function registerSiloTools(server: McpServer) {
         tags: r.tags,
         status: r.status,
         updated_at: r.updated_at,
-        background_markdown: tiptapToMarkdown(r.background),
-        overview_markdown: tiptapToMarkdown(r.overview),
+        // ページ本文。「[発話表]」の位置に utterances が入る
+        page_markdown: r.body
+          ? tiptapToMarkdown(r.body)
+          : [tiptapToMarkdown(r.background), tiptapToMarkdown(r.overview)].filter(Boolean).join("\n\n"),
         utterances: (utt ?? []).map((u) => ({ utterance_id: u.id, speaker: u.speaker, insight: u.insight_text, note: u.note })),
         facts: (facts ?? []).filter((f) => f.status === "accepted").map(shape),
         proposed_facts: (facts ?? []).filter((f) => f.status === "proposed").map(shape),

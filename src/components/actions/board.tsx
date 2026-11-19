@@ -6,6 +6,7 @@ import {
   ArrowRightIcon,
   CopyIcon,
   FrameIcon,
+  HandIcon,
   LightbulbIcon,
   MinusIcon,
   MousePointer2Icon,
@@ -30,7 +31,7 @@ import { InsightPicker } from "./insight-picker";
 const NOTE_W = 180;
 const NOTE_H = 120;
 const TEXT_SIZES = { s: 13, m: 18, l: 28 } as const;
-type Tool = "select" | "note" | "text" | "frame" | "arrow";
+type Tool = "select" | "hand" | "note" | "text" | "frame" | "arrow";
 
 type Box = { id: string; x: number; y: number; w: number; h: number };
 const noteBox = (n: BoardNote): Box => ({
@@ -65,8 +66,13 @@ export function Board({ value, onChange }: { value: BoardContent; onChange: (v: 
   const gesture = useRef<
     | { type: "move"; start: { x: number; y: number }; origin: Map<string, { x: number; y: number }>; moved: boolean }
     | { type: "resize"; id: string; start: { x: number; y: number }; w: number; h: number }
+    | { type: "pan"; x: number; y: number; left: number; top: number }
+    | { type: "marquee"; start: { x: number; y: number }; additive: boolean; base: Set<string> }
     | null
   >(null);
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [spaceDown, setSpaceDown] = useState(false);
+  const [panning, setPanning] = useState(false);
   const boardRef = useRef(board);
   boardRef.current = board;
 
@@ -232,7 +238,7 @@ export function Board({ value, onChange }: { value: BoardContent; onChange: (v: 
         setTool("select");
         setArrowFrom(null);
       } else if (!mod && e.key.length === 1) {
-        const map: Record<string, Tool> = { v: "select", n: "note", t: "text", f: "frame", a: "arrow" };
+        const map: Record<string, Tool> = { v: "select", h: "hand", n: "note", t: "text", f: "frame", a: "arrow" };
         if (map[e.key.toLowerCase()]) setTool(map[e.key.toLowerCase()]);
       }
     };
@@ -240,8 +246,25 @@ export function Board({ value, onChange }: { value: BoardContent; onChange: (v: 
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  // Space を押している間は「手のひら」（ドラッグで画面を動かす）
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || (e.target as HTMLElement).closest("input,textarea,[contenteditable=true]")) return;
+      e.preventDefault();
+      setSpaceDown(true);
+    };
+    const up = (e: KeyboardEvent) => e.code === "Space" && setSpaceDown(false);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, []);
+
   // ---- ポインタ操作（移動・サイズ変更） ----
   function startMove(e: React.PointerEvent, id: string) {
+    if (e.button === 1 || tool === "hand" || spaceDown) return startPan(e);
     if (e.button !== 0) return;
     e.stopPropagation();
     if (tool === "arrow") {
@@ -281,10 +304,37 @@ export function Board({ value, onChange }: { value: BoardContent; onChange: (v: 
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
   }
   const base = useRef<BoardContent | null>(null);
+  function startPan(e: React.PointerEvent) {
+    const el = scroller.current;
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    gesture.current = { type: "pan", x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop };
+    setPanning(true);
+    canvas.current?.setPointerCapture?.(e.pointerId);
+  }
   function onPointerMove(e: React.PointerEvent) {
     const g = gesture.current;
     if (!g) return;
+    if (g.type === "pan") {
+      const el = scroller.current!;
+      el.scrollLeft = g.left - (e.clientX - g.x);
+      el.scrollTop = g.top - (e.clientY - g.y);
+      return;
+    }
     const p = toCanvas(e);
+    if (g.type === "marquee") {
+      const r = { x: Math.min(g.start.x, p.x), y: Math.min(g.start.y, p.y), w: Math.abs(p.x - g.start.x), h: Math.abs(p.y - g.start.y) };
+      if (r.w + r.h < 4) return;
+      setMarquee(r);
+      // 枠に少しでも重なった付箋・枠を選ぶ
+      const hit = new Set(g.base);
+      boxes.forEach((b) => {
+        if (b.x < r.x + r.w && b.x + b.w > r.x && b.y < r.y + r.h && b.y + b.h > r.y) hit.add(b.id);
+      });
+      setSelected(hit);
+      return;
+    }
     const dx = p.x - g.start.x;
     const dy = p.y - g.start.y;
     if (!base.current) base.current = boardRef.current;
@@ -313,6 +363,12 @@ export function Board({ value, onChange }: { value: BoardContent; onChange: (v: 
   function onPointerUp() {
     const g = gesture.current;
     gesture.current = null;
+    if (g?.type === "pan") return setPanning(false);
+    if (g?.type === "marquee") {
+      if (!marquee && !g.additive) setSelected(new Set()); // ただのクリックは選択解除
+      setMarquee(null);
+      return;
+    }
     if (base.current && (g?.type === "resize" || (g?.type === "move" && g.moved))) commit(boardRef.current, base.current);
     base.current = null;
   }
@@ -324,15 +380,20 @@ export function Board({ value, onChange }: { value: BoardContent; onChange: (v: 
   /** 空いている場所を押したとき：道具に応じて置く、選択ツールなら選択解除 */
   function placeOrClear(e: React.PointerEvent) {
     (document.activeElement as HTMLElement | null)?.blur(); // 編集中のテキストを先に保存
+    if (e.button === 1 || tool === "hand" || spaceDown) return startPan(e);
     const at = toCanvas(e);
     if (tool === "note" || tool === "text" || tool === "frame") e.preventDefault(); // 置いた直後の入力欄からフォーカスを奪わない
     if (tool === "note") addNote(at);
     else if (tool === "text") addNote(at, { kind: "text", color: "gray" });
     else if (tool === "frame") addFrame(at);
-    else {
-      setSelected(new Set());
-      setEditing(null);
+    else if (tool === "arrow") {
       setArrowFrom(null);
+      return;
+    } else {
+      // 空いている場所からドラッグ → 範囲選択（Shift で追加）
+      setEditing(null);
+      gesture.current = { type: "marquee", start: at, additive: e.shiftKey, base: e.shiftKey ? new Set(selected) : new Set() };
+      canvas.current?.setPointerCapture?.(e.pointerId);
       return;
     }
     setTool("select");
@@ -363,6 +424,7 @@ export function Board({ value, onChange }: { value: BoardContent; onChange: (v: 
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-200 bg-white px-4 py-1.5">
         {toolBtn("select", <MousePointer2Icon className="size-3.5" />, "選択", "V")}
+        {toolBtn("hand", <HandIcon className="size-3.5" />, "移動", "H")}
         {toolBtn("note", <StickyNoteIcon className="size-3.5" />, "付箋", "N")}
         {toolBtn("text", <TypeIcon className="size-3.5" />, "テキスト", "T")}
         {toolBtn("frame", <FrameIcon className="size-3.5" />, "枠", "F")}
@@ -413,7 +475,7 @@ export function Board({ value, onChange }: { value: BoardContent; onChange: (v: 
               ? arrowFrom
                 ? "矢印の先をクリック"
                 : "矢印の始まりをクリック"
-              : "ダブルクリックで編集 · Shift+クリックで複数選択 · 右下の角でサイズ変更"}
+              : "空白をドラッグで範囲選択 · Space+ドラッグで画面移動 · ダブルクリックで付箋"}
           </span>
           <IconBtn label="縮小" onClick={() => setZoom((z) => Math.max(0.3, +(z - 0.1).toFixed(2)))}>
             <MinusIcon className="size-3.5" />
@@ -439,7 +501,10 @@ export function Board({ value, onChange }: { value: BoardContent; onChange: (v: 
         <div style={{ width: size.w * zoom, height: size.h * zoom }}>
           <div
             ref={canvas}
-            className={cn("relative origin-top-left select-none", tool !== "select" && "cursor-crosshair")}
+            className={cn(
+              "relative origin-top-left select-none",
+              panning ? "cursor-grabbing" : tool === "hand" || spaceDown ? "cursor-grab" : tool !== "select" && "cursor-crosshair"
+            )}
             style={{
               width: size.w,
               height: size.h,
@@ -595,6 +660,12 @@ export function Board({ value, onChange }: { value: BoardContent; onChange: (v: 
                 </div>
               );
             })}
+            {marquee && (
+              <div
+                className="pointer-events-none absolute border border-blue-500 bg-blue-500/10"
+                style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
+              />
+            )}
           </div>
         </div>
       </div>

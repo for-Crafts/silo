@@ -10,7 +10,6 @@ import { SAVE_ERROR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { FactWithInsight, Utterance } from "@/lib/types";
 import { useKeyedPatchQueue } from "@/lib/patch-queue";
-import { UTTERANCE_TABLE_EVENT } from "@/components/editor/slash-command";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -23,9 +22,11 @@ import {
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-type Props = {
+export type UtteranceTableProps = {
   researchId: string;
-  initialUtterances: Utterance[];
+  /** 行はページ側で持つ（本文中のブロックが作り直されても消えないように） */
+  rows: Utterance[];
+  setRows: Dispatch<SetStateAction<Utterance[]>>;
   facts: FactWithInsight[];
   setFacts: Dispatch<SetStateAction<FactWithInsight[]>>;
 };
@@ -33,9 +34,8 @@ type Props = {
 type Field = "speaker" | "insight_text" | "note";
 type RowPatch = Partial<Pick<Utterance, Field>>;
 
-export function UtteranceTable({ researchId, initialUtterances, facts, setFacts }: Props) {
+export function UtteranceTable({ researchId, rows, setRows, facts, setFacts }: UtteranceTableProps) {
   const { workspaceId, userId, inboxInsightId } = useWorkspace();
-  const [rows, setRows] = useState<Utterance[]>(initialUtterances);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const sectionRef = useRef<HTMLDivElement>(null);
@@ -46,15 +46,6 @@ export function UtteranceTable({ researchId, initialUtterances, facts, setFacts 
     return m;
   }, [facts]);
 
-  useEffect(() => {
-    const onFocus = () => {
-      sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      const first = sectionRef.current?.querySelector<HTMLTextAreaElement>("textarea");
-      first?.focus();
-    };
-    window.addEventListener(UTTERANCE_TABLE_EVENT, onFocus);
-    return () => window.removeEventListener(UTTERANCE_TABLE_EVENT, onFocus);
-  }, []);
 
   // 同じ行の発話者・インサイト・補足の変更は 1 リクエストにまとめる
   const rowQueue = useKeyedPatchQueue<RowPatch>(async (id, fields) => {
@@ -209,9 +200,9 @@ export function UtteranceTable({ researchId, initialUtterances, facts, setFacts 
   };
 
   return (
-    <div ref={sectionRef} onKeyDown={onKeyDown} className="scroll-mt-4">
-      <div className="mb-2.5 mt-8 flex items-center justify-between">
-        <h2 className="text-xl font-bold">録画データ</h2>
+    <div ref={sectionRef} onKeyDown={onKeyDown} className="not-prose my-3 scroll-mt-16">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs text-zinc-500">発話表 · {rows.length} 行</span>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" className="h-[30px] text-xs" onClick={() => setPasteOpen(true)}>
             <ClipboardPasteIcon data-icon="inline-start" />
@@ -238,7 +229,7 @@ export function UtteranceTable({ researchId, initialUtterances, facts, setFacts 
         </div>
         {rows.length === 0 && (
           <div className="border-b border-zinc-200 p-4 text-center text-sm text-muted-foreground">
-            発話がまだありません。「貼り付けて追加」か「＋ 行を追加」で記録しましょう
+            発話はまだありません。「貼り付けて追加」か「＋ 行を追加」で記録します
           </div>
         )}
         {rows.map((r) => {

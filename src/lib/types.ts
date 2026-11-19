@@ -21,7 +21,7 @@ export type ResearchStatus = (typeof RESEARCH_STATUSES)[number];
 
 /** Columns the client is allowed to read (transcript_enc is excluded by grant). */
 export const RESEARCH_COLUMNS =
-  "id, workspace_id, folder_id, title, subject, background, overview, tags, status, ext_id, created_by, updated_by, created_at, updated_at, deleted_at";
+  "id, workspace_id, folder_id, title, subject, background, overview, body, tags, status, ext_id, created_by, updated_by, created_at, updated_at, deleted_at";
 
 export type ResearchFile = {
   id: string;
@@ -31,6 +31,8 @@ export type ResearchFile = {
   subject: string;
   background: unknown | null;
   overview: unknown | null;
+  /** ページ本文（Tiptap JSON）。発話表は { type: "utteranceTable" } ブロック */
+  body?: unknown | null;
   tags: string[];
   status: string;
   ext_id: string | null;
@@ -41,7 +43,7 @@ export type ResearchFile = {
   deleted_at: string | null;
 };
 
-export type ResearchListItem = Omit<ResearchFile, "background" | "overview">;
+export type ResearchListItem = Omit<ResearchFile, "background" | "overview" | "body">;
 
 export type Utterance = {
   id: string;

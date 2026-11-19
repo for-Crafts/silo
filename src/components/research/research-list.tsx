@@ -166,7 +166,7 @@ export function ResearchList({ folders: initialFolders, researches: initialResea
 
         {researches.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-12 text-center text-sm text-muted-foreground">
-            まだリサーチがありません。『新しくつくる』で面談を記録しましょう
+            まだリサーチがありません。「新しくつくる」から面談を記録できます
           </div>
         ) : rows.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-12 text-sm text-muted-foreground">

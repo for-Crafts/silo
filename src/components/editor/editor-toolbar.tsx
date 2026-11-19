@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { PICK_IMAGE_EVENT } from "./slash-command";
 
 /** Centou 準拠の固定ツールバー。最後にフォーカスされたエディタを操作する。 */
-export function EditorToolbar({ editor }: { editor: Editor | null }) {
+export function EditorToolbar({ editor, children }: { editor: Editor | null; children?: React.ReactNode }) {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
     if (!editor) return;
@@ -89,6 +89,12 @@ export function EditorToolbar({ editor }: { editor: Editor | null }) {
       <button type="button" aria-label="やり直す" className={btn()} disabled={!editor?.can().redo()} onClick={run((e) => e.chain().focus().redo().run())}>
         <Redo2Icon className="size-[15px]" />
       </button>
+      {children && (
+        <>
+          {sep}
+          {children}
+        </>
+      )}
     </div>
   );
 }

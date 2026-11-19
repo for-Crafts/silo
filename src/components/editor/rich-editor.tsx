@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { SlashCommand } from "./slash-command";
 import { InsightMention } from "./mention";
 import { ResearchImage, hasPendingUploads, insertImageFiles, type UploadFn } from "./research-image";
+import { UtteranceTableNode } from "./utterance-block";
 
 type Props = {
   content: JSONContent | null | undefined;
@@ -57,6 +58,7 @@ export function RichEditor({
       InsightMention,
       ResearchImage.configure({ inline: false, allowBase64: false }),
       TableKit.configure({ table: { resizable: false } }),
+      UtteranceTableNode,
     ],
     content: content ?? "",
     editorProps: {

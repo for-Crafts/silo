@@ -485,7 +485,7 @@ export function InsightWorkspace({ insights: initial, counts: initialCounts }: {
                   )}
                   <p className="mt-1.5 text-[13px] text-zinc-500">
                     {selected.is_inbox
-                      ? "リサーチの ✓ で作ったファクトがここに届きます。左のテーマへドラッグして分類しましょう"
+                      ? "リサーチで ✓ を付けたファクトがここに並びます。左のテーマへドラッグすると分類されます"
                       : `ファクト ${counts[selected.id] ?? 0} 件 · 子テーマ ${childrenOf(selected.id).length} 件`}
                   </p>
                 </div>
